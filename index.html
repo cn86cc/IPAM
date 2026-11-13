@@ -1,0 +1,641 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>IPAM · IPv4 地址管理平台</title>
+<style>
+:root{
+  --bg:#F5F7FA; --surface:#FFFFFF; --border:#E6EAF0; --border-2:#D9E0EA;
+  --text:#1B2430; --text-2:#5B6879; --text-3:#93A0B0;
+  --blue:#185FA5; --blue-50:#E6F1FB; --blue-800:#0C447C;
+  --teal:#0F6E56; --teal-50:#E1F5EE; --teal-800:#085041;
+  --amber:#BA7517; --amber-50:#FAEEDA; --amber-800:#854F0B;
+  --red:#A32D2D; --red-50:#FCEBEB;
+  --gray-50:#F1EFE8; --gray-800:#5F5E5A;
+  --r:12px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;font-size:13px;line-height:1.6;-webkit-font-smoothing:antialiased}
+.sprite{position:absolute;width:0;height:0;overflow:hidden}
+.ico{width:16px;height:16px;flex:none;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+button{font:inherit;cursor:pointer;border:none;background:none;color:inherit}
+input,select{font:inherit;color:inherit}
+.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;letter-spacing:.2px}
+.app{display:flex;min-height:100vh}
+
+/* ---------- sidebar ---------- */
+.sidebar{width:232px;flex:none;background:var(--surface);border-right:1px solid var(--border);position:fixed;top:0;bottom:0;left:0;display:flex;flex-direction:column;z-index:20}
+.brand{display:flex;align-items:center;gap:10px;padding:20px 20px 16px}
+.brand-mark{width:32px;height:32px;border-radius:9px;background:var(--blue);color:#fff;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:600;letter-spacing:.5px}
+.brand-name{font-size:15px;font-weight:600;letter-spacing:.2px}
+.brand-sub{font-size:11px;color:var(--text-3);margin-top:-2px}
+.env{margin:0 16px 14px;padding:8px 10px;border-radius:8px;background:var(--blue-50);color:var(--blue-800);font-size:11px;display:flex;align-items:center;gap:6px}
+.env .dot{width:6px;height:6px;border-radius:50%;background:var(--teal);flex:none}
+.nav{flex:1;overflow-y:auto;padding:0 10px 16px}
+.nav-group{margin-bottom:14px}
+.nav-title{font-size:11px;color:var(--text-3);padding:6px 10px;letter-spacing:.6px}
+.nav-item{display:flex;align-items:center;gap:10px;width:100%;padding:8px 10px;border-radius:8px;color:var(--text-2);font-size:13px;text-align:left;transition:background .15s,color .15s}
+.nav-item:hover{background:var(--bg);color:var(--text)}
+.nav-item.active{background:var(--blue-50);color:var(--blue-800);font-weight:500}
+.nav-item .ico{width:15px;height:15px}
+.nav-item .badge{margin-left:auto;background:var(--red-50);color:var(--red);font-size:11px;padding:0 6px;border-radius:10px;line-height:18px}
+.side-foot{padding:12px 20px;border-top:1px solid var(--border);font-size:11px;color:var(--text-3)}
+
+/* ---------- topbar ---------- */
+.main{margin-left:232px;flex:1;min-width:0}
+.topbar{height:60px;background:var(--surface);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:14px;padding:0 28px;position:sticky;top:0;z-index:15}
+.crumb{font-size:13px;color:var(--text-3);white-space:nowrap}
+.crumb b{color:var(--text);font-weight:500}
+.top-search{margin-left:auto;position:relative;width:250px}
+.top-search .ico{position:absolute;left:10px;top:9px;color:var(--text-3)}
+.top-search input{width:100%;height:34px;padding:0 12px 0 32px;border:1px solid var(--border);border-radius:8px;background:var(--bg);outline:none;font-size:12px}
+.top-search input:focus{border-color:var(--blue);background:var(--surface)}
+.icon-btn{width:34px;height:34px;border:1px solid var(--border);border-radius:8px;display:flex;align-items:center;justify-content:center;color:var(--text-2);position:relative}
+.icon-btn:hover{border-color:var(--blue);color:var(--blue)}
+.icon-btn .ping{position:absolute;top:6px;right:7px;width:6px;height:6px;border-radius:50%;background:#D85A30}
+.btn{height:34px;padding:0 13px;border:1px solid var(--border-2);border-radius:8px;background:var(--surface);display:inline-flex;align-items:center;gap:7px;font-size:12px;color:var(--text-2);white-space:nowrap}
+.btn:hover{border-color:var(--blue);color:var(--blue)}
+.btn.primary{background:var(--blue);border-color:var(--blue);color:#fff}
+.btn.primary:hover{background:var(--blue-800);color:#fff}
+.btn.ghost{border-color:transparent;background:transparent}
+.avatar{width:32px;height:32px;border-radius:50%;background:var(--teal-50);color:var(--teal-800);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600}
+
+/* ---------- content ---------- */
+.content{padding:24px 28px 40px;max-width:1500px}
+.page-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:20px;flex-wrap:wrap}
+.page-head h1{font-size:20px;font-weight:600;letter-spacing:.2px}
+.page-head p{color:var(--text-2);font-size:12px;margin-top:4px}
+.page-head .actions{display:flex;gap:8px;flex-wrap:wrap}
+.metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;margin-bottom:16px}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);box-shadow:0 1px 2px rgba(16,24,40,.03)}
+.metric{padding:16px 18px}
+.metric-top{display:flex;align-items:center;justify-content:space-between;color:var(--text-2);font-size:12px}
+.metric-top .ico{color:var(--blue)}
+.metric-num{font-size:26px;font-weight:600;letter-spacing:-.5px;margin-top:8px;line-height:1.2}
+.metric-num small{font-size:13px;font-weight:400;color:var(--text-3);margin-left:3px}
+.metric-foot{font-size:11px;color:var(--text-3);margin-top:6px}
+.bar{height:6px;border-radius:6px;background:var(--bg);overflow:hidden;margin-top:10px}
+.bar i{display:block;height:100%;border-radius:6px;background:var(--blue)}
+.bar.warn i{background:var(--amber)}
+.bar.crit i{background:var(--red)}
+.grid-2{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(0,1fr);gap:14px;margin-bottom:16px;align-items:start}
+.card-head{display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1px solid var(--border)}
+.card-head h2{font-size:14px;font-weight:600}
+.card-head .hint{font-size:11px;color:var(--text-3)}
+.card-body{padding:14px 18px}
+.right-col{display:flex;flex-direction:column;gap:14px}
+
+/* ---------- tree ---------- */
+.tree-row{display:flex;align-items:center;gap:8px;height:34px;border-radius:7px;padding:0 8px;cursor:pointer;white-space:nowrap}
+.tree-row:hover{background:var(--bg)}
+.tree-row.selected{background:var(--blue-50)}
+.tree-row.root{background:var(--bg);font-weight:500}
+.tree-row.root:hover{background:var(--blue-50)}
+.tree-caret{width:14px;height:14px;color:var(--text-3);display:flex;align-items:center;justify-content:center;flex:none;transition:transform .15s}
+.tree-row.collapsed .tree-caret{transform:rotate(-90deg)}
+.tree-row .ico{width:14px;height:14px;color:var(--blue)}
+.tree-cidr{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;min-width:112px;color:var(--text)}
+.tree-name{font-size:12px;color:var(--text-2);flex:1;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.tree-row.group .tree-name{color:var(--text);font-weight:500}
+.minibar{width:74px;height:5px;border-radius:5px;background:var(--bg);overflow:hidden;flex:none}
+.minibar i{display:block;height:100%;border-radius:5px;background:var(--blue)}
+.minibar.hot i{background:var(--amber)}
+.minibar.crit i{background:var(--red)}
+.tree-pct{font-size:11px;color:var(--text-3);width:34px;text-align:right;flex:none;font-variant-numeric:tabular-nums}
+.tree-legend{display:flex;gap:16px;padding:10px 18px;border-top:1px solid var(--border);font-size:11px;color:var(--text-3)}
+.tree-legend span{display:flex;align-items:center;gap:5px}
+.tree-legend i{width:8px;height:8px;border-radius:2px;display:inline-block}
+
+/* ---------- right cards ---------- */
+.warn-item{padding:9px 0;border-bottom:1px dashed var(--border)}
+.warn-item:last-child{padding-bottom:0;border-bottom:none}
+.warn-head{display:flex;align-items:center;justify-content:space-between;font-size:12px}
+.warn-head .mono{color:var(--text)}
+.warn-head .pct{font-weight:600;font-variant-numeric:tabular-nums}
+.warn-note{font-size:11px;color:var(--text-3);margin-top:3px}
+.lvl{font-size:10px;padding:1px 7px;border-radius:10px;line-height:17px}
+.lvl.crit{background:var(--red-50);color:var(--red)}
+.lvl.warn{background:var(--amber-50);color:var(--amber-800)}
+.stack{display:flex;height:12px;border-radius:6px;overflow:hidden;margin:4px 0 14px;background:var(--bg)}
+.stack i{display:block;height:100%}
+.legend{display:grid;grid-template-columns:1fr 1fr;gap:8px 12px}
+.legend div{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text-2)}
+.legend i{width:8px;height:8px;border-radius:2px;flex:none}
+.legend b{margin-left:auto;font-weight:500;color:var(--text);font-variant-numeric:tabular-nums}
+.diff{display:flex;gap:9px;padding:9px 0;border-bottom:1px dashed var(--border);align-items:flex-start}
+.diff:last-child{padding-bottom:0;border-bottom:none}
+.diff .ico{color:var(--red);margin-top:2px}
+.diff-txt{flex:1;min-width:0}
+.diff-txt p{font-size:12px;line-height:1.4}
+.diff-txt span{font-size:11px;color:var(--text-3)}
+.tag{font-size:10px;padding:1px 7px;border-radius:10px;line-height:17px;white-space:nowrap}
+.tag.red{background:var(--red-50);color:var(--red)}
+.tag.amber{background:var(--amber-50);color:var(--amber-800)}
+
+/* ---------- table ---------- */
+.table-tools{display:flex;align-items:center;gap:10px;padding:12px 18px;border-bottom:1px solid var(--border);flex-wrap:wrap}
+.tabs{display:flex;gap:2px;background:var(--bg);padding:3px;border-radius:8px}
+.tab{padding:5px 11px;border-radius:6px;font-size:12px;color:var(--text-2);white-space:nowrap}
+.tab.active{background:var(--surface);color:var(--blue-800);font-weight:500;box-shadow:0 1px 2px rgba(16,24,40,.06)}
+.tab .n{font-size:11px;color:var(--text-3);margin-left:4px}
+.table-search{position:relative;margin-left:auto;width:210px}
+.table-search .ico{position:absolute;left:9px;top:8px;color:var(--text-3)}
+.table-search input{width:100%;height:32px;padding:0 10px 0 30px;border:1px solid var(--border);border-radius:8px;outline:none;font-size:12px;background:var(--surface)}
+.table-search input:focus{border-color:var(--blue)}
+.scope{font-size:11px;color:var(--text-3);display:flex;align-items:center;gap:6px}
+.scope b{color:var(--blue-800);font-weight:500}
+table{width:100%;border-collapse:collapse}
+th{text-align:left;font-size:11px;color:var(--text-3);font-weight:400;padding:10px 18px;background:#FBFCFD;border-bottom:1px solid var(--border);white-space:nowrap}
+td{padding:11px 18px;border-bottom:1px solid #F0F3F7;font-size:12px;white-space:nowrap}
+tbody tr:hover{background:#FAFCFF}
+tbody tr:last-child td{border-bottom:none}
+.pill{display:inline-flex;align-items:center;gap:5px;font-size:11px;padding:2px 9px;border-radius:10px;line-height:18px}
+.pill i{width:5px;height:5px;border-radius:50%;background:currentColor}
+.pill.assigned{background:var(--teal-50);color:var(--teal-800)}
+.pill.available{background:var(--blue-50);color:var(--blue-800)}
+.pill.reserved{background:var(--amber-50);color:var(--amber-800)}
+.pill.deprecated{background:var(--gray-50);color:var(--gray-800)}
+.pill.conflict{background:var(--red-50);color:var(--red)}
+.row-act{font-size:11px;color:var(--blue);padding:3px 8px;border-radius:6px;border:1px solid transparent}
+.row-act:hover{background:var(--blue-50);border-color:#B5D4F4}
+.table-foot{display:flex;align-items:center;justify-content:space-between;padding:11px 18px;border-top:1px solid var(--border);font-size:11px;color:var(--text-3)}
+.pager{display:flex;gap:4px}
+.pager button{min-width:28px;height:26px;border:1px solid var(--border);border-radius:6px;font-size:11px;color:var(--text-2)}
+.pager button.on{background:var(--blue);border-color:var(--blue);color:#fff}
+.pager button:disabled{opacity:.4;cursor:default}
+.empty{text-align:center;padding:36px;color:var(--text-3);font-size:12px}
+.footnote{font-size:11px;color:var(--text-3);margin-top:14px}
+
+/* ---------- drawer / modal / toast ---------- */
+.overlay{position:fixed;inset:0;background:rgba(16,24,40,.28);opacity:0;pointer-events:none;transition:opacity .2s;z-index:40}
+.overlay.show{opacity:1;pointer-events:auto}
+.drawer{position:fixed;top:0;right:0;bottom:0;width:420px;max-width:92vw;background:var(--surface);z-index:50;transform:translateX(100%);transition:transform .25s;display:flex;flex-direction:column;box-shadow:-8px 0 24px rgba(16,24,40,.08)}
+.drawer.show{transform:translateX(0)}
+.drawer-head{padding:20px 22px;border-bottom:1px solid var(--border);display:flex;align-items:flex-start;justify-content:space-between}
+.drawer-head h2{font-size:16px;font-weight:600}
+.drawer-head p{font-size:11px;color:var(--text-3);margin-top:3px}
+.drawer-body{padding:18px 22px;overflow-y:auto;flex:1}
+.layer{border:1px solid var(--border);border-radius:10px;padding:12px 14px;margin-bottom:10px}
+.layer.core{border-color:#9FE1CB;background:#F5FBF8}
+.layer-head{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:500}
+.layer-idx{width:20px;height:20px;border-radius:6px;background:var(--blue-50);color:var(--blue-800);font-size:10px;display:flex;align-items:center;justify-content:center;flex:none}
+.layer.core .layer-idx{background:var(--teal-50);color:var(--teal-800)}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.chip{font-size:11px;padding:3px 9px;border-radius:6px;background:var(--bg);color:var(--text-2)}
+.layer.core .chip{background:var(--teal-50);color:var(--teal-800)}
+.layer-note{font-size:11px;color:var(--text-3);margin-top:9px;line-height:1.5}
+.drawer-foot{padding:14px 22px;border-top:1px solid var(--border);font-size:11px;color:var(--text-2);background:#FBFCFD}
+.modal{position:fixed;top:50%;left:50%;transform:translate(-50%,-48%) scale(.98);width:460px;max-width:92vw;background:var(--surface);border-radius:14px;z-index:50;opacity:0;pointer-events:none;transition:opacity .2s,transform .2s;box-shadow:0 16px 48px rgba(16,24,40,.16)}
+.modal.show{opacity:1;pointer-events:auto;transform:translate(-50%,-50%) scale(1)}
+.modal-head{padding:18px 20px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center}
+.modal-head h2{font-size:15px;font-weight:600}
+.modal-body{padding:18px 20px}
+.field{margin-bottom:14px}
+.field label{display:block;font-size:12px;color:var(--text-2);margin-bottom:6px}
+.field input,.field select{width:100%;height:36px;padding:0 10px;border:1px solid var(--border-2);border-radius:8px;outline:none;background:var(--surface);font-size:12px}
+.field input:focus,.field select:focus{border-color:var(--blue)}
+.field .help{font-size:11px;color:var(--text-3);margin-top:5px}
+.modal-foot{padding:14px 20px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:8px}
+.toast-wrap{position:fixed;top:72px;right:24px;z-index:60;display:flex;flex-direction:column;gap:8px}
+.toast{background:var(--surface);border:1px solid var(--border);border-left:3px solid var(--teal);border-radius:9px;padding:10px 14px;font-size:12px;color:var(--text);box-shadow:0 6px 20px rgba(16,24,40,.08);min-width:230px;animation:slide .2s ease-out}
+@keyframes slide{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:none}}
+@media(max-width:1180px){.grid-2{grid-template-columns:1fr}.metrics{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:820px){.sidebar{display:none}.main{margin-left:0}.top-search{width:180px}.content{padding:18px}.metrics{grid-template-columns:repeat(2,minmax(0,1fr))}th,td{padding-left:12px;padding-right:12px}}
+</style>
+</head>
+<body>
+<svg class="sprite" aria-hidden="true"><defs>
+<symbol id="i-grid" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></symbol>
+<symbol id="i-network" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="5" rx="1"/><rect x="3" y="16" width="6" height="5" rx="1"/><rect x="15" y="16" width="6" height="5" rx="1"/><path d="M12 8v4M6 16v-2h12v2"/></symbol>
+<symbol id="i-ip" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 10h18M7 15h4"/></symbol>
+<symbol id="i-split" viewBox="0 0 24 24"><path d="M4 4h6v6H4zM14 14h6v6h-6zM10 7h4a3 3 0 0 1 3 3v4"/></symbol>
+<symbol id="i-request" viewBox="0 0 24 24"><path d="M12 3v12M7 10l5 5 5-5M4 20h16"/></symbol>
+<symbol id="i-scan" viewBox="0 0 24 24"><path d="M3 8V5a2 2 0 0 1 2-2h3M16 3h3a2 2 0 0 1 2 2v3M21 16v3a2 2 0 0 1-2 2h-3M8 21H5a2 2 0 0 1-2-2v-3M3 12h18"/></symbol>
+<symbol id="i-ticket" viewBox="0 0 24 24"><path d="M4 6h16v4a2 2 0 0 0 0 4v4H4v-4a2 2 0 0 0 0-4zM9 9h6M9 15h4"/></symbol>
+<symbol id="i-audit" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
+<symbol id="i-chart" viewBox="0 0 24 24"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></symbol>
+<symbol id="i-plug" viewBox="0 0 24 24"><path d="M9 3v5M15 3v5M6 8h12v3a6 6 0 0 1-6 6 6 6 0 0 1-6-6zM12 17v4"/></symbol>
+<symbol id="i-settings" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></symbol>
+<symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m16.5 16.5 4 4"/></symbol>
+<symbol id="i-bell" viewBox="0 0 24 24"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/></symbol>
+<symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+<symbol id="i-download" viewBox="0 0 24 24"><path d="M12 3v12M7 11l5 5 5-5M4 20h16"/></symbol>
+<symbol id="i-layers" viewBox="0 0 24 24"><path d="m12 3 9 5-9 5-9-5zM3 12l9 5 9-5M3 16l9 5 9-5"/></symbol>
+<symbol id="i-chevron" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+<symbol id="i-close" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></symbol>
+<symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-2 6M20 4v7h-7"/></symbol>
+<symbol id="i-alert" viewBox="0 0 24 24"><path d="M12 3 2 20h20zM12 9v5M12 17h.01"/></symbol>
+<symbol id="i-check" viewBox="0 0 24 24"><path d="m4 12 5 5L20 6"/></symbol>
+</defs></svg>
+
+<div class="app">
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="brand-mark">IP</div>
+      <div><div class="brand-name">IPAM 控制台</div><div class="brand-sub">IPv4 地址管理平台</div></div>
+    </div>
+    <div class="env"><span class="dot"></span> 生产环境 · 华东主数据中心</div>
+    <nav class="nav">
+      <div class="nav-group">
+        <div class="nav-title">工作台</div>
+        <button class="nav-item" data-nav="概览看板"><svg class="ico"><use href="#i-grid"/></svg>概览看板</button>
+      </div>
+      <div class="nav-group">
+        <div class="nav-title">地址管理</div>
+        <button class="nav-item active" data-nav="地址空间"><svg class="ico"><use href="#i-network"/></svg>地址空间</button>
+        <button class="nav-item" data-nav="IP 地址池"><svg class="ico"><use href="#i-ip"/></svg>IP 地址池</button>
+        <button class="nav-item" data-nav="子网划分"><svg class="ico"><use href="#i-split"/></svg>子网划分</button>
+        <button class="nav-item" data-nav="分配申请"><svg class="ico"><use href="#i-request"/></svg>分配申请</button>
+      </div>
+      <div class="nav-group">
+        <div class="nav-title">治理与对账</div>
+        <button class="nav-item" data-nav="发现与对账"><svg class="ico"><use href="#i-scan"/></svg>发现与对账 <span class="badge">3</span></button>
+        <button class="nav-item" data-nav="审批工单"><svg class="ico"><use href="#i-ticket"/></svg>审批工单</button>
+        <button class="nav-item" data-nav="审计日志"><svg class="ico"><use href="#i-audit"/></svg>审计日志</button>
+      </div>
+      <div class="nav-group">
+        <div class="nav-title">分析与集成</div>
+        <button class="nav-item" data-nav="报表中心"><svg class="ico"><use href="#i-chart"/></svg>报表中心</button>
+        <button class="nav-item" data-nav="集成配置"><svg class="ico"><use href="#i-plug"/></svg>集成配置</button>
+        <button class="nav-item" data-nav="系统设置"><svg class="ico"><use href="#i-settings"/></svg>系统设置</button>
+      </div>
+    </nav>
+    <div class="side-foot">v0.1 · 前端原型 / 演示数据</div>
+  </aside>
+
+  <div class="main">
+    <header class="topbar">
+      <div class="crumb">工作台 / <b id="crumb">地址空间</b></div>
+      <div class="top-search"><svg class="ico"><use href="#i-search"/></svg><input id="globalSearch" placeholder="搜索 IP / 主机名 / 业务 / 负责人" aria-label="全局搜索"></div>
+      <button class="btn" id="archBtn"><svg class="ico"><use href="#i-layers"/></svg>架构视图</button>
+      <button class="icon-btn" id="bellBtn" aria-label="通知"><svg class="ico"><use href="#i-bell"/></svg><span class="ping"></span></button>
+      <div class="avatar" title="网络管理员">网</div>
+    </header>
+
+    <main class="content">
+      <div class="page-head">
+        <div>
+          <h1>地址空间总览</h1>
+          <p>按业务能力层落地 · 地址空间 / 分配回收 / 发现对账 / 查询报表</p>
+        </div>
+        <div class="actions">
+          <button class="btn" id="refreshBtn"><svg class="ico"><use href="#i-refresh"/></svg>刷新</button>
+          <button class="btn" id="exportBtn"><svg class="ico"><use href="#i-download"/></svg>导出 CSV</button>
+          <button class="btn" id="newPrefixBtn"><svg class="ico"><use href="#i-plus"/></svg>新建前缀</button>
+          <button class="btn primary" id="allocBtn"><svg class="ico"><use href="#i-plus"/></svg>自动分配 IP</button>
+        </div>
+      </div>
+
+      <section class="metrics" id="metrics"></section>
+
+      <section class="grid-2">
+        <div class="card">
+          <div class="card-head"><h2>地址空间前缀树</h2><span class="hint">点击网段可联动下方明细</span></div>
+          <div class="card-body" id="tree"></div>
+          <div class="tree-legend">
+            <span><i style="background:#185FA5"></i>正常</span>
+            <span><i style="background:#BA7517"></i>≥ 80% 关注</span>
+            <span><i style="background:#A32D2D"></i>≥ 90% 预警</span>
+            <span style="margin-left:auto">共 12 个已划分 /24 网段</span>
+          </div>
+        </div>
+        <div class="right-col">
+          <div class="card">
+            <div class="card-head"><h2>容量预警</h2><span class="hint">Top 3</span></div>
+            <div class="card-body" id="warnings"></div>
+          </div>
+          <div class="card">
+            <div class="card-head"><h2>地址状态分布</h2><span class="hint" id="distTotal"></span></div>
+            <div class="card-body" id="dist"></div>
+          </div>
+          <div class="card">
+            <div class="card-head"><h2>最近对账差异</h2><span class="hint">发现与对账</span></div>
+            <div class="card-body" id="diffs"></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="card-head"><h2>IP 地址明细</h2><span class="hint">状态流转由领域核心层统一约束</span></div>
+        <div class="table-tools">
+          <div class="tabs" id="tabs"></div>
+          <div class="scope" id="scope"></div>
+          <div class="table-search"><svg class="ico"><use href="#i-search"/></svg><input id="tableSearch" placeholder="在结果中筛选" aria-label="表格筛选"></div>
+        </div>
+        <div style="overflow-x:auto">
+          <table>
+            <thead><tr><th>IP 地址</th><th>状态</th><th>主机名</th><th>所属前缀</th><th>业务系统</th><th>负责人</th><th>VLAN</th><th>最后更新</th><th>操作</th></tr></thead>
+            <tbody id="tbody"></tbody>
+          </table>
+        </div>
+        <div class="table-foot"><span id="tableCount"></span><div class="pager" id="pager"></div></div>
+      </section>
+      <p class="footnote">演示说明：指标按已划分 /24 网段的占用口径统计（每个网段保留网络号、网关、广播共 3 个地址），表格为最近变更记录样本。所有数据均为前端模拟，不连接后端。</p>
+    </main>
+  </div>
+</div>
+
+<div class="overlay" id="overlay"></div>
+<aside class="drawer" id="drawer">
+  <div class="drawer-head">
+    <div><h2>产品架构视图</h2><p>与上方五层架构图一一对应</p></div>
+    <button class="icon-btn" id="drawerClose" aria-label="关闭"><svg class="ico"><use href="#i-close"/></svg></button>
+  </div>
+  <div class="drawer-body" id="drawerBody"></div>
+  <div class="drawer-foot">当前页面覆盖：02 业务能力层（地址空间 / 分配回收 / 发现对账 / 查询报表），并调用 03 领域核心层的状态机与子网计算能力。</div>
+</aside>
+
+<div class="modal" id="modal">
+  <div class="modal-head"><h2>自动分配 IP</h2><button class="icon-btn" id="modalClose" aria-label="关闭"><svg class="ico"><use href="#i-close"/></svg></button></div>
+  <div class="modal-body">
+    <div class="field"><label>目标前缀</label><select id="fPrefix"></select><div class="help">系统自动选取该网段下一个可用地址，跳过网络号、网关与广播地址</div></div>
+    <div class="field"><label>业务系统</label><input id="fBusiness" value="核心交易平台" placeholder="如：核心交易平台"></div>
+    <div class="field"><label>负责人</label><input id="fOwner" value="张伟" placeholder="如：张伟"></div>
+    <div class="field"><label>分配方式</label><select id="fMode"><option value="auto">自动 · 下一个可用 IP</option><option value="reserved">仅预留（进入预留态，限时 24h）</option></select><div class="help">自动分配会对前缀行加分布式锁，避免并发申请撞号</div></div>
+  </div>
+  <div class="modal-foot"><button class="btn" id="modalCancel">取消</button><button class="btn primary" id="modalOk"><svg class="ico"><use href="#i-check"/></svg>确认分配</button></div>
+</div>
+
+<div class="toast-wrap" id="toasts"></div>
+
+<script>
+const ICON = n => '<svg class="ico"><use href="#'+n+'"/></svg>';
+const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+const groups = [
+  {cidr:'10.1.0.0/16', name:'华东生产', open:true},
+  {cidr:'10.2.0.0/16', name:'华北生产', open:true},
+  {cidr:'10.8.0.0/16', name:'测试环境', open:false},
+  {cidr:'10.9.0.0/16', name:'DMZ 区', open:true}
+];
+const subnets = [
+  {cidr:'10.1.1.0/24',  name:'核心业务',       group:'10.1.0.0/16', vlan:101, used:220},
+  {cidr:'10.1.2.0/24',  name:'数据库集群',     group:'10.1.0.0/16', vlan:102, used:166},
+  {cidr:'10.1.3.0/24',  name:'消息队列',       group:'10.1.0.0/16', vlan:103, used:176},
+  {cidr:'10.1.10.0/24', name:'办公终端',       group:'10.1.0.0/16', vlan:110, used:105},
+  {cidr:'10.1.20.0/24', name:'网络设备管理',   group:'10.1.0.0/16', vlan:120, used:206},
+  {cidr:'10.2.1.0/24',  name:'容器节点',       group:'10.2.0.0/16', vlan:201, used:184},
+  {cidr:'10.2.2.0/24',  name:'缓存与中间件',   group:'10.2.0.0/16', vlan:202, used:152},
+  {cidr:'10.2.3.0/24',  name:'大数据计算',     group:'10.2.0.0/16', vlan:203, used:141},
+  {cidr:'10.8.1.0/24',  name:'开发环境',       group:'10.8.0.0/16', vlan:801, used:118},
+  {cidr:'10.8.5.0/24',  name:'集成测试',       group:'10.8.0.0/16', vlan:805, used:84},
+  {cidr:'10.9.1.0/24',  name:'DMZ 边缘',       group:'10.9.0.0/16', vlan:901, used:198},
+  {cidr:'10.9.2.0/24',  name:'公网映射',       group:'10.9.0.0/16', vlan:902, used:233}
+];
+const STATUS = {
+  assigned:{label:'已分配', cls:'assigned'},
+  available:{label:'可用', cls:'available'},
+  reserved:{label:'预留', cls:'reserved'},
+  deprecated:{label:'待回收', cls:'deprecated'},
+  conflict:{label:'冲突', cls:'conflict'}
+};
+let ips = [
+  ['10.1.1.12','assigned','app-core-01','10.1.1.0/24','核心交易平台','张伟',101,'11-09 14:22'],
+  ['10.1.1.13','assigned','app-core-02','10.1.1.0/24','核心交易平台','张伟',101,'11-09 14:20'],
+  ['10.1.1.14','reserved','app-core-03','10.1.1.0/24','核心交易平台','李娜',101,'11-09 13:58'],
+  ['10.1.1.15','available','—','10.1.1.0/24','—','—',101,'11-09 12:40'],
+  ['10.1.2.20','assigned','db-mysql-01','10.1.2.0/24','订单数据库','陈默',102,'11-09 11:07'],
+  ['10.1.2.21','conflict','unknown-host','10.1.2.0/24','未登记','—',102,'11-09 10:31'],
+  ['10.1.2.22','available','—','10.1.2.0/24','—','—',102,'11-09 09:15'],
+  ['10.1.3.30','assigned','mq-kafka-01','10.1.3.0/24','消息中间件','王磊',103,'11-08 18:42'],
+  ['10.1.10.40','available','—','10.1.10.0/24','—','—',110,'11-08 17:20'],
+  ['10.1.10.41','deprecated','old-pc-118','10.1.10.0/24','办公终端','—',110,'11-08 16:05'],
+  ['10.1.20.8','assigned','sw-access-08','10.1.20.0/24','网络设备','赵强',120,'11-08 15:33'],
+  ['10.2.1.50','assigned','k8s-node-01','10.2.1.0/24','容器平台','刘洋',201,'11-09 14:02'],
+  ['10.2.1.51','assigned','k8s-node-02','10.2.1.0/24','容器平台','刘洋',201,'11-09 14:01'],
+  ['10.2.2.60','reserved','redis-02','10.2.2.0/24','缓存服务','孙倩',202,'11-09 13:44'],
+  ['10.2.2.61','available','—','10.2.2.0/24','—','—',202,'11-09 12:11'],
+  ['10.2.3.70','assigned','spark-worker-03','10.2.3.0/24','大数据平台','周敏',203,'11-08 20:18'],
+  ['10.8.1.11','available','—','10.8.1.0/24','—','—',801,'11-08 19:50'],
+  ['10.8.5.21','deprecated','test-old-07','10.8.5.0/24','集成测试','—',805,'11-08 18:03'],
+  ['10.9.1.5','assigned','dmz-proxy-01','10.9.1.0/24','反向代理','吴昊',901,'11-09 14:35'],
+  ['10.9.2.6','assigned','nat-map-06','10.9.2.0/24','公网映射','吴昊',902,'11-09 14:31'],
+  ['10.9.2.7','conflict','rogue-device','10.9.2.0/24','未登记','—',902,'11-09 14:28'],
+  ['10.9.2.8','available','—','10.9.2.0/24','—','—',902,'11-09 13:12']
+].map(r => ({ip:r[0],status:r[1],hostname:r[2],prefix:r[3],business:r[4],owner:r[5],vlan:r[6],updated:r[7]}));
+
+const diffs = [
+  {txt:'10.1.2.21 在 ARP 表中在线，但 IPAM 未登记', sub:'来源：接入交换机 SNMP · 2 分钟前', tag:'未登记使用', cls:'red'},
+  {txt:'10.9.2.7 发现未知 MAC 占用已登记地址', sub:'来源：DHCP 租约同步 · 8 分钟前', tag:'地址冲突', cls:'red'},
+  {txt:'10.1.10.41 已分配但连续 30 天无流量', sub:'来源：NetFlow 对账 · 1 小时前', tag:'僵尸 IP', cls:'amber'}
+];
+const layers = [
+  {n:'01 接入与展示层', mods:['Web 控制台','Open API','CLI 工具','SSO / LDAP'], note:'所有入口共用同一套鉴权与审计切面，写操作统一收敛到领域核心层。'},
+  {n:'02 业务能力层', mods:['地址空间','分配回收','发现对账','查询报表'], note:'当前页面落地的模块：前缀树、自动分配、容量预警、明细检索。', core:false},
+  {n:'03 领域核心层', mods:['IP 状态机','冲突校验','子网计算','审计留痕'], note:'系统的心脏。CIDR 重叠判定用 inet/cidr + GiST 索引，分配需对前缀行加锁。', core:true},
+  {n:'04 集成与同步层', mods:['DNS / DHCP','CMDB / 云','网络设备 SNMP','Webhook 告警'], note:'把真实使用状况回灌，形成登记 → 使用 → 对账 → 回收的闭环。'},
+  {n:'05 数据与基础设施层', mods:['PostgreSQL','Redis','搜索引擎','任务队列与对象存储'], note:'大网段不预生成 IP 行，用前缀表 + 空闲区间 / 位图按需落库。'}
+];
+
+let state = {prefix:'all', status:'all', q:'', page:1, pageSize:8};
+const $ = id => document.getElementById(id);
+const pct = s => Math.round(s.used / 256 * 100);
+const totals = () => {
+  const total = subnets.length * 256;
+  const assigned = subnets.reduce((a,s) => a + s.used, 0);
+  const retained = subnets.length * 3;
+  const reserved = 121;
+  const free = total - assigned - reserved - retained;
+  return {total, assigned, retained, reserved, free, util:(assigned/(total-retained)*100).toFixed(1)};
+};
+
+function renderMetrics(){
+  const t = totals();
+  const cards = [
+    {label:'纳管地址总数', num:t.total.toLocaleString(), unit:'个', foot:'12 个已划分 /24 网段 · 4 个地址空间', ico:'i-ip', bar:null},
+    {label:'已分配 / 占用', num:t.assigned.toLocaleString(), unit:'个', foot:'占比 '+t.util+'% · 含待回收观察期地址', ico:'i-network', bar:null},
+    {label:'可用地址', num:t.free.toLocaleString(), unit:'个', foot:'另有 121 个预留地址 · 24h 限时', ico:'i-split', bar:null},
+    {label:'整体利用率', num:t.util, unit:'%', foot:'2 个子网超过 85% 阈值，需扩容', ico:'i-chart', bar:parseFloat(t.util)}
+  ];
+  $('metrics').innerHTML = cards.map(c => '<div class="card metric"><div class="metric-top"><span>'+c.label+'</span>'+ICON(c.ico)+'</div><div class="metric-num">'+c.num+'<small>'+c.unit+'</small></div><div class="metric-foot">'+c.foot+'</div>'+(c.bar !== null ? '<div class="bar"><i style="width:'+c.bar+'%"></i></div>' : '')+'</div>').join('');
+}
+
+function renderTree(){
+  const rows = [];
+  rows.push('<div class="tree-row root" data-scope="all" data-level="0"><span class="tree-caret"></span>'+ICON('i-layers')+'<span class="tree-cidr">10.0.0.0/8</span><span class="tree-name">企业内网根空间 · VRF default</span><span class="minibar"><i style="width:'+parseFloat(totals().util)+'%"></i></span><span class="tree-pct">'+totals().util+'%</span></div>');
+  groups.forEach(g => {
+    const kids = subnets.filter(s => s.group === g.cidr);
+    const used = kids.reduce((a,s) => a + s.used, 0);
+    const p = Math.round(used / (kids.length*256) * 100);
+    const level = 1;
+    rows.push('<div class="tree-row group'+(g.open ? '' : ' collapsed')+'" data-group="'+g.cidr+'" data-level="'+level+'"><span class="tree-caret">'+ICON('i-chevron')+'</span>'+ICON('i-network')+'<span class="tree-cidr">'+g.cidr+'</span><span class="tree-name">'+g.name+' · '+kids.length+' 个子网</span><span class="minibar"><i style="width:'+p+'%"></i></span><span class="tree-pct">'+p+'%</span></div>');
+    kids.forEach(s => {
+      const sp = pct(s);
+      const cls = sp >= 90 ? 'crit' : (sp >= 80 ? 'hot' : '');
+      rows.push('<div class="tree-row subnet'+(g.open ? '' : ' hidden')+'" data-scope="'+s.cidr+'" data-parent="'+g.cidr+'" data-level="2" style="'+(g.open ? '' : 'display:none')+'"><span class="tree-caret"></span>'+ICON('i-ip')+'<span class="tree-cidr">'+s.cidr+'</span><span class="tree-name">'+s.name+' · VLAN '+s.vlan+'</span><span class="minibar '+cls+'"><i style="width:'+sp+'%"></i></span><span class="tree-pct">'+sp+'%</span></div>');
+    });
+  });
+  $('tree').innerHTML = rows.join('');
+  $('tree').querySelectorAll('.tree-row').forEach(r => {
+    r.style.paddingLeft = (8 + Number(r.dataset.level)*20) + 'px';
+    if (state.prefix !== 'all' && r.dataset.scope === state.prefix) r.classList.add('selected');
+  });
+}
+
+function renderRight(){
+  const hot = [...subnets].sort((a,b) => b.used - a.used).slice(0,3);
+  $('warnings').innerHTML = hot.map(s => {
+    const p = pct(s), cls = p >= 90 ? 'crit' : 'warn';
+    return '<div class="warn-item"><div class="warn-head"><span class="mono">'+s.cidr+'</span><span style="display:flex;align-items:center;gap:8px"><span class="lvl '+cls+'">'+(p>=90?'紧急':'关注')+'</span><span class="pct" style="color:'+(p>=90?'var(--red)':'var(--amber)')+'">'+p+'%</span></span></div><div class="bar '+(p>=90?'crit':'warn')+'" style="margin-top:7px"><i style="width:'+p+'%"></i></div><div class="warn-note">'+s.name+' · 剩余 '+(256-s.used-3)+' 个可分配地址'+(p>=90?' · 建议立即扩容':' · 建议预留新网段')+'</div></div>';
+  }).join('');
+
+  const t = totals();
+  const parts = [
+    {k:'已分配', v:t.assigned, c:'#1D9E75'},
+    {k:'可用', v:t.free, c:'#378ADD'},
+    {k:'预留', v:t.reserved, c:'#EF9F27'},
+    {k:'保留', v:t.retained, c:'#B4B2A9'}
+  ];
+  $('distTotal').textContent = '合计 ' + t.total.toLocaleString() + ' 个';
+  $('dist').innerHTML = '<div class="stack">'+parts.map(p => '<i style="width:'+(p.v/t.total*100)+'%;background:'+p.c+'"></i>').join('')+'</div><div class="legend">'+parts.map(p => '<div><i style="background:'+p.c+'"></i>'+p.k+'<b>'+p.v.toLocaleString()+'</b></div>').join('')+'</div>';
+  $('diffs').innerHTML = diffs.map(d => '<div class="diff">'+ICON('i-alert')+'<div class="diff-txt"><p>'+d.txt+'</p><span>'+d.sub+'</span></div><span class="tag '+d.cls+'">'+d.tag+'</span></div>').join('');
+}
+
+function filtered(){
+  const q = state.q.trim().toLowerCase();
+  return ips.filter(r => {
+    if (state.prefix !== 'all' && r.prefix !== state.prefix && !r.prefix.startsWith(state.prefix.replace(/\/16$/,''))) return false;
+    if (state.status !== 'all' && r.status !== state.status) return false;
+    if (!q) return true;
+    return [r.ip,r.hostname,r.business,r.owner,r.prefix,String(r.vlan)].join(' ').toLowerCase().includes(q);
+  });
+}
+
+function renderTabs(){
+  const counts = {all:ips.length};
+  Object.keys(STATUS).forEach(k => counts[k] = ips.filter(r => r.status === k).length);
+  const items = [{k:'all',label:'全部'}].concat(Object.keys(STATUS).map(k => ({k,label:STATUS[k].label})));
+  $('tabs').innerHTML = items.map(i => '<button class="tab'+(state.status===i.k?' active':'')+'" data-status="'+i.k+'">'+i.label+'<span class="n">'+counts[i.k]+'</span></button>').join('');
+  $('scope').innerHTML = state.prefix === 'all' ? '范围：<b>全部地址空间</b>' : '范围：<b>'+esc(state.prefix)+'</b> <span style="color:var(--blue);cursor:pointer" data-clear="1">清除</span>';
+}
+
+function renderTable(){
+  const rows = filtered();
+  const pages = Math.max(1, Math.ceil(rows.length / state.pageSize));
+  if (state.page > pages) state.page = pages;
+  const view = rows.slice((state.page-1)*state.pageSize, state.page*state.pageSize);
+  const acts = {assigned:'释放',available:'分配',reserved:'确认',deprecated:'查看',conflict:'处理'};
+  $('tbody').innerHTML = view.length ? view.map(r => {
+    const s = STATUS[r.status];
+    return '<tr><td class="mono" style="color:var(--blue-800)">'+esc(r.ip)+'</td><td><span class="pill '+s.cls+'"><i></i>'+s.label+'</span></td><td>'+esc(r.hostname)+'</td><td class="mono" style="color:var(--text-2)">'+esc(r.prefix)+'</td><td>'+esc(r.business)+'</td><td>'+esc(r.owner)+'</td><td>'+r.vlan+'</td><td style="color:var(--text-3)">'+r.updated+'</td><td><button class="row-act" data-act="'+r.status+'" data-ip="'+r.ip+'">'+acts[r.status]+'</button></td></tr>';
+  }).join('') : '<tr><td colspan="9"><div class="empty">没有符合条件的地址记录</div></td></tr>';
+  $('tableCount').textContent = '共 ' + rows.length + ' 条记录 · 第 ' + state.page + ' / ' + pages + ' 页';
+  let ph = '<button data-page="prev"'+(state.page===1?' disabled':'')+'>上一页</button>';
+  for (let p=1;p<=pages;p++) ph += '<button data-page="'+p+'"'+(p===state.page?' class="on"':'')+'>'+p+'</button>';
+  ph += '<button data-page="next"'+(state.page===pages?' disabled':'')+'>下一页</button>';
+  $('pager').innerHTML = ph;
+}
+
+function renderAll(){ renderMetrics(); renderTree(); renderRight(); renderTabs(); renderTable(); }
+
+function toast(msg){
+  const el = document.createElement('div');
+  el.className = 'toast';
+  el.textContent = msg;
+  $('toasts').appendChild(el);
+  setTimeout(() => { el.style.opacity = '0'; el.style.transition = 'opacity .25s'; setTimeout(() => el.remove(), 260); }, 2800);
+}
+
+function openDrawer(){
+  $('drawerBody').innerHTML = layers.map((l,i) => '<div class="layer'+(l.core?' core':'')+'"><div class="layer-head"><span class="layer-idx">'+(i+1)+'</span>'+l.n+'</div><div class="chips">'+l.mods.map(m => '<span class="chip">'+m+'</span>').join('')+'</div><div class="layer-note">'+l.note+'</div></div>').join('');
+  $('drawer').classList.add('show'); $('overlay').classList.add('show');
+}
+function closeDrawer(){ $('drawer').classList.remove('show'); $('overlay').classList.remove('show'); }
+function openModal(){
+  $('fPrefix').innerHTML = subnets.map(s => '<option value="'+s.cidr+'">'+s.cidr+' · '+s.name+'（'+pct(s)+'% 已用）</option>').join('');
+  $('modal').classList.add('show'); $('overlay').classList.add('show');
+}
+function closeModal(){ $('modal').classList.remove('show'); $('overlay').classList.remove('show'); }
+
+function allocate(){
+  const cidr = $('fPrefix').value;
+  const s = subnets.find(x => x.cidr === cidr);
+  const base = cidr.split('/')[0].split('.').slice(0,3).join('.') + '.';
+  const used = new Set(ips.filter(r => r.prefix === cidr).map(r => r.ip));
+  let h = 2;
+  while (h < 255 && used.has(base + h)) h++;
+  if (h >= 255) { toast('该网段已无可分配地址，请先扩容'); return; }
+  const ip = base + h;
+  const mode = $('fMode').value;
+  ips.unshift({ip, status:mode === 'reserved' ? 'reserved' : 'assigned', hostname:mode === 'reserved' ? 'pending-alloc' : 'srv-auto-'+h, prefix:cidr, business:esc($('fBusiness').value || '未指定'), owner:esc($('fOwner').value || '—'), vlan:s.vlan, updated:'11-09 14:46'});
+  s.used += 1;
+  state.prefix = cidr; state.status = 'all'; state.page = 1;
+  renderAll(); closeModal();
+  toast(mode === 'reserved' ? ip + ' 已预留，24 小时内有效' : ip + ' 分配成功 · 已写入审计日志');
+}
+
+function exportCSV(){
+  const head = ['IP 地址','状态','主机名','所属前缀','业务系统','负责人','VLAN','最后更新'];
+  const body = filtered().map(r => [r.ip,STATUS[r.status].label,r.hostname,r.prefix,r.business,r.owner,r.vlan,r.updated].map(v => '"'+String(v).replace(/"/g,'""')+'"').join(','));
+  const blob = new Blob(['\uFEFF' + [head.join(','), ...body].join('\n')], {type:'text/csv;charset=utf-8'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob); a.download = 'ipam-addresses.csv'; a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  toast('已导出 ' + body.length + ' 条地址记录');
+}
+
+document.addEventListener('click', e => {
+  const t = e.target;
+  const nav = t.closest('[data-nav]');
+  if (nav) {
+    document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+    nav.classList.add('active');
+    $('crumb').textContent = nav.dataset.nav;
+    toast('演示版聚焦「地址空间」工作台，其余模块按架构图规划');
+    return;
+  }
+  const row = t.closest('.tree-row');
+  if (row) {
+    if (row.dataset.group) {
+      const g = groups.find(x => x.cidr === row.dataset.group);
+      g.open = !g.open;
+      row.classList.toggle('collapsed', !g.open);
+      document.querySelectorAll('[data-parent="'+g.cidr+'"]').forEach(k => k.style.display = g.open ? '' : 'none');
+    } else {
+      state.prefix = row.dataset.scope; state.page = 1;
+      renderTree(); renderTabs(); renderTable();
+      toast(state.prefix === 'all' ? '已恢复全部地址空间' : '已筛选 ' + state.prefix);
+    }
+    return;
+  }
+  const tab = t.closest('[data-status]');
+  if (tab) { state.status = tab.dataset.status; state.page = 1; renderTabs(); renderTable(); return; }
+  if (t.closest('[data-clear]')) { state.prefix = 'all'; state.page = 1; renderTree(); renderTabs(); renderTable(); return; }
+  const pg = t.closest('[data-page]');
+  if (pg && !pg.disabled) {
+    const pages = Math.max(1, Math.ceil(filtered().length / state.pageSize));
+    state.page = pg.dataset.page === 'prev' ? Math.max(1, state.page-1) : (pg.dataset.page === 'next' ? Math.min(pages, state.page+1) : Number(pg.dataset.page));
+    renderTable(); return;
+  }
+  const act = t.closest('[data-act]');
+  if (act) {
+    const ip = act.dataset.ip, r = ips.find(x => x.ip === ip);
+    if (act.dataset.act === 'assigned') { r.status = 'deprecated'; toast(ip + ' 已提交回收工单，进入观察期'); }
+    else if (act.dataset.act === 'available') { openModal(); $('fPrefix').value = r.prefix; }
+    else if (act.dataset.act === 'reserved') { r.status = 'assigned'; toast(ip + ' 预留已确认，转为已分配'); }
+    else if (act.dataset.act === 'conflict') { toast(ip + ' 已生成对账差异工单，待人工排查'); }
+    else { toast(ip + ' 处于下线观察期，释放校验通过后归还可用池'); }
+    renderTabs(); renderTable(); return;
+  }
+  if (t.closest('#archBtn')) openDrawer();
+  else if (t.closest('#drawerClose')) closeDrawer();
+  else if (t.closest('#allocBtn')) openModal();
+  else if (t.closest('#modalClose') || t.closest('#modalCancel')) closeModal();
+  else if (t.closest('#modalOk')) allocate();
+  else if (t.closest('#exportBtn')) exportCSV();
+  else if (t.closest('#refreshBtn')) { renderAll(); toast('数据已刷新'); }
+  else if (t.closest('#newPrefixBtn')) toast('新建前缀向导：下一步将校验 CIDR 重叠并写入前缀树');
+  else if (t.closest('#bellBtn')) toast('2 条容量预警、3 条对账差异待处理');
+});
+
+$('overlay').addEventListener('click', () => { closeDrawer(); closeModal(); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape') { closeDrawer(); closeModal(); } });
+const syncSearch = v => { state.q = v; state.page = 1; renderTable(); };
+$('globalSearch').addEventListener('input', e => { $('tableSearch').value = e.target.value; syncSearch(e.target.value); });
+$('tableSearch').addEventListener('input', e => { $('globalSearch').value = e.target.value; syncSearch(e.target.value); });
+
+renderAll();
+</script>
+</body>
+</html>

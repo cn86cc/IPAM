@@ -1,0 +1,84 @@
+# IPAM · IPv4 地址管理平台 —— GitHub 提交过滤规则
+# 所有路径均相对于仓库根目录；本文件自身需要提交。
+
+# ---------- Python / 虚拟环境 / 缓存 ----------
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+build/
+/dist/
+.Python
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+
+# ---------- Node / 前端缓存 ----------
+node_modules/
+.npm/
+.eslintcache
+.parcel-cache/
+.vite/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# 注意：上面写的是 /dist/（只匹配根目录的 dist），不会误伤 frontend/dist。
+# frontend/dist 是后端 backend/app.py 直接托管的构建产物，本项目【有意随仓库提交】，
+# 这样 clone 后不装 Node.js 也能直接启动。若你希望改为每次由 install.sh 构建，
+# 取消下一行注释（此时必须安装 Node.js 18+）：
+# frontend/dist/
+
+# ---------- 运行数据 / 数据库 / 备份（含密码哈希，禁止上传） ----------
+ipam.db
+ipam.db-*
+ipam.db.*
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+backups/
+data/
+
+# ---------- 日志 / 进程 / 临时文件 ----------
+logs/
+*.log
+*.pid
+*.tmp
+*.temp
+*.bak
+*.swp
+*.swo
+*~
+nohup.out
+.cache/
+
+# ---------- 环境变量 / 密钥 / 证书 ----------
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+secrets/
+
+# ---------- IDE / 编辑器 / 操作系统 ----------
+.idea/
+.vscode/
+*.iml
+*.sublime-workspace
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ---------- WorkBuddy 本地会话数据（仅不提交，不要删除该目录） ----------
+.workbuddy/
