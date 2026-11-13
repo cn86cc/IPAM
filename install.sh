@@ -11,7 +11,8 @@
 #   --help     显示帮助
 #
 # 环境变量：
-#   IPAM_DEMO_SEED=0        纯净/生产模式：不灌演示业务数据（默认 1，会灌演示数据）
+#   IPAM_DEMO_SEED=0        纯净/生产模式：全新库仅三段 RFC1918 根 + 内置配置 + admin
+#                            （默认 1，会灌入完整演示业务数据）
 #   IPAM_HOST / IPAM_PORT   --start 的监听地址/端口（默认 127.0.0.1 / 8000）
 #   PIP_INDEX_URL            Python 镜像，例如 https://pypi.tuna.tsinghua.edu.cn/simple
 #   npm_config_registry      npm 镜像，例如 https://registry.npmmirror.com
@@ -31,7 +32,7 @@ RUN_TEST=0
 CHECK_ONLY=0
 
 usage() {
-  sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '2,21p' "$0" | sed 's/^# \{0,1\}//'
 }
 
 for arg in "$@"; do
@@ -123,7 +124,12 @@ show_status() {
   [[ -f "$ROOT/ipam.db" ]] \
     && printf '  数据库 ipam.db        : 已存在（执行幂等迁移，不覆盖数据）\n' \
     || printf '  数据库 ipam.db        : 不存在（将自动创建）\n'
-  printf '  IPAM_DEMO_SEED        : %s（0 = 纯净模式）\n' "${IPAM_DEMO_SEED:-1}"
+  if [[ "${IPAM_DEMO_SEED:-1}" == "0" ]]; then
+    MODE_NOTE="纯净模式：仅三段 RFC1918 根 + 内置配置 + admin"
+  else
+    MODE_NOTE="演示模式：含地址 / 设备 / 工单等示例数据"
+  fi
+  printf '  IPAM_DEMO_SEED        : %s（%s）\n' "${IPAM_DEMO_SEED:-1}" "$MODE_NOTE"
   printf '\n检查完成，未修改任何文件。\n'
 }
 
@@ -137,9 +143,11 @@ if [[ "$CHECK_ONLY" -eq 1 ]]; then
   exit 0
 fi
 
-if [[ "${IPAM_DEMO_SEED:-1}" != "0" ]]; then
-  warn "当前 IPAM_DEMO_SEED=1：首次初始化会写入演示业务数据（设备/工单/对账样例）。"
-  warn "如需纯净空库，请先按 Ctrl+C 中断，改用： IPAM_DEMO_SEED=0 ./install.sh"
+if [[ "${IPAM_DEMO_SEED:-1}" == "0" ]]; then
+  ok "纯净模式：全新库只保留三段 RFC1918 根 + 内置配置 + admin，业务表为空"
+else
+  warn "演示模式 IPAM_DEMO_SEED=1：首次初始化会写入完整演示业务数据（地址 / 设备 / 工单 / 对账）。"
+  warn "生产部署请改用： IPAM_DEMO_SEED=0 ./install.sh"
 fi
 
 # ---------------------------------------------------------------- 1. 虚拟环境
@@ -206,9 +214,42 @@ else
 fi
 
 # ---------------------------------------------------------------- 5. 数据库
-say "[5/6] 初始化 / 迁移数据库"
-"$PY" -c 'from backend import db; db.init_db(); print("    [OK] 数据库就绪：" + str(db.DB_PATH))' \
-  || die "数据库初始化失败（检查磁盘权限与 backend/ 目录是否完整）"
+say "[5/6] 初始化 / 迁移数据库并验收"
+DB_EXISTED=0
+if [[ -f "$ROOT/ipam.db" ]]; then DB_EXISTED=1; fi
+IPAM_DB_EXISTED="$DB_EXISTED" "$PY" - <<'PYCODE' || die "数据库初始化或纯净库验收失败（检查磁盘权限与 backend/ 目录是否完整）"
+import os
+import sqlite3
+from backend import db
+
+db.init_db()
+c = sqlite3.connect(db.DB_PATH)
+business = (
+    "ip_addresses", "asset_devices", "asset_links", "asset_locations", "asset_racks",
+    "audit_logs", "discovery_records", "reconciliation_diffs", "sessions", "sso_states",
+    "tickets", "utilization_snapshots", "webhook_events",
+)
+tables = [r[0] for r in c.execute("SELECT name FROM sqlite_master WHERE type='table'")]
+counts = {t: c.execute('SELECT COUNT(*) FROM "%s"' % t).fetchone()[0] for t in tables}
+biz_total = sum(counts.get(t, 0) for t in business)
+clean = not db.demo_seed_enabled()
+print("    [OK] 数据库就绪：" + str(db.DB_PATH))
+print("    模式：" + ("纯净 / 生产（IPAM_DEMO_SEED=0）" if clean else "演示（IPAM_DEMO_SEED=1）"))
+print("    users=%d  prefixes=%d  ip_addresses=%d  业务表合计=%d  integrity=%s" % (
+    counts.get("users", 0), counts.get("prefixes", 0), counts.get("ip_addresses", 0),
+    biz_total, c.execute("PRAGMA integrity_check").fetchone()[0]))
+# 只对「全新库」做硬验收：已有数据的库重跑属于正常迁移，不应被误判
+if clean and os.environ.get("IPAM_DB_EXISTED") == "0":
+    roots = list(c.execute("SELECT vrf,cidr,kind FROM prefixes ORDER BY cidr"))
+    bad = (biz_total != 0 or counts.get("users", 0) != 1
+           or len(roots) != 3 or any(r[2] != "root" for r in roots))
+    if bad:
+        print("    [错误] 纯净模式全新库验收失败：应仅含三段 RFC1918 根 + admin，业务表为空")
+        c.close()
+        raise SystemExit(1)
+    print("    [OK] 纯净库验收通过（三段根 / 仅 admin / 业务表全空）")
+c.close()
+PYCODE
 
 # ---------------------------------------------------------------- 6. 自检与测试
 say "[6/6] 自检"
@@ -231,6 +272,11 @@ if [[ "$START" -eq 1 ]]; then
   if [[ "$HOST" == "0.0.0.0" ]]; then SHOW_HOST="127.0.0.1"; fi
   say "启动服务： http://$SHOW_HOST:$PORT/"
   printf '    默认管理员：admin / Admin@123（登录后请立即修改密码）\n'
+  if [[ "${IPAM_DEMO_SEED:-1}" == "0" ]]; then
+    printf '    当前模式  ：纯净（三段根 + admin，无演示数据）\n'
+  else
+    printf '    当前模式  ：演示（含示例业务数据）\n'
+  fi
   printf '    API 文档  ：http://%s:%s/docs\n' "$SHOW_HOST" "$PORT"
   printf '    按 Ctrl+C 停止服务\n\n'
   exec "$PY" -m uvicorn backend.app:app --host "$HOST" --port "$PORT"
@@ -243,5 +289,11 @@ printf '   开发/热更新        : ./start.sh                 -> http://127.0.
 printf '   允许局域网访问     : IPAM_HOST=0.0.0.0 ./install.sh --start\n'
 printf '   换端口             : IPAM_PORT=8001 ./install.sh --start\n'
 printf '   运行测试           : ./install.sh --test\n'
+printf '   纯净模式安装       : IPAM_DEMO_SEED=0 ./install.sh\n'
 printf '   默认管理员         : admin / Admin@123\n'
+if [[ "${IPAM_DEMO_SEED:-1}" == "0" ]]; then
+  printf '   本次模式           : 纯净（已验收：三段根 / 仅 admin / 业务表全空）\n'
+else
+  printf '   本次模式           : 演示（含示例业务数据）\n'
+fi
 printf '==============================================================\n'

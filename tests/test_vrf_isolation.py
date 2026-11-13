@@ -7,10 +7,12 @@
 """
 from __future__ import annotations
 
+import os
 import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from backend import assets, auth, db, domain, extended, prefix_admin
 
@@ -19,12 +21,23 @@ PLANE = "vrf-a"
 OTHER = "vrf-b"
 
 
+def init_with_demo() -> None:
+    """固定以演示模式初始化 fixture。
+
+    本文件的用例依赖 _seed() 生成的子网 / IP / 快照；若调用方设置了
+    IPAM_DEMO_SEED=0（例如 IPAM_DEMO_SEED=0 ./install.sh --test），
+    纯净库会让断言失效。测试必须自己固定前提，不依赖外部环境变量。
+    """
+    with mock.patch.dict(os.environ, {"IPAM_DEMO_SEED": "1"}):
+        db.init_db()
+
+
 class VrfIsolationTest(unittest.TestCase):
     def setUp(self) -> None:
         self.tmp = tempfile.TemporaryDirectory()
         db.DB_PATH = Path(self.tmp.name) / "ipam.db"
         db.set_current_vrf("default")
-        db.init_db()
+        init_with_demo()
 
     def tearDown(self) -> None:
         db.set_current_vrf("default")
@@ -70,7 +83,7 @@ class VrfIsolationTest(unittest.TestCase):
             self.assertIn("vrf" if table != "vrfs" else "warn_threshold",
                           self.columns(c, table), f"{table} 缺少 VRF 相关列")
         # init_db 幂等：再跑一次不应报错或改坏主键
-        db.init_db()
+        init_with_demo()
         self.assertEqual(self.primary_key(c, "prefixes"), ["vrf", "cidr"])
         c.close()
 

@@ -21,11 +21,15 @@ DB_PATH = Path(__file__).resolve().parent.parent / "ipam.db"
 
 
 def demo_seed_enabled() -> bool:
-    """是否灌入演示业务数据（设备 / 机柜 / 链路 / 位置 / 工单 / 发现 / 对账样例）。
+    """是否灌入演示业务数据（地址 / IP / 设备 / 工单 / 发现 / 对账样例）。
 
-    默认开启，保持原有开发体验。生产部署设置 IPAM_DEMO_SEED=0 后，
-    已清空的封版库在服务每次启动时都不会被幂等种子重新灌满。
-    必需的配置字典（VRF / 设置 / 集成源 / 角色 / 认证源 / 页面文案）不受影响。
+    默认开启，保持原有开发体验。生产部署设置 IPAM_DEMO_SEED=0 后：
+      * 全新库只写入三段 RFC1918 根前缀（分属 default / vrf-lab / vrf-prod），
+        不生成任何 IP、快照、审计、设备或工单记录；
+      * 内置配置字典（VRF / 设置 / 集成源 / 角色 / 认证源）照常写入；
+      * 初始账号只创建 admin，不创建演示用的 viewer；
+      * 已清空的封版库在服务每次启动时都不会被幂等种子重新灌满。
+    自定义页面文案由 extended.get_page() 用内置默认值兜底，不依赖数据库种子。
     """
     return os.environ.get("IPAM_DEMO_SEED", "1") != "0"
 
@@ -430,6 +434,31 @@ def _seed(conn: sqlite3.Connection) -> None:
     conn.commit()
 
 
+# 纯净模式保留的三段私有根：属于「内置地址空间骨架」，不是演示业务数据。
+# 让地址空间树开箱可用，同时使 prefixes 非空，避免后续启动再次触发 _seed()。
+CLEAN_ROOTS = (
+    ("default", "10.0.0.0/8", "企业内网根空间"),
+    ("vrf-lab", "172.16.0.0/12", "研发租户根空间"),
+    ("vrf-prod", "192.168.0.0/16", "生产租户根空间"),
+)
+
+
+def _seed_roots(conn: sqlite3.Connection) -> None:
+    """纯净 / 生产模式专用：只写三段 RFC1918 根，不产生任何业务记录。
+
+    不写 audit_logs / utilization_snapshots，保证全新库的业务表保持为空。
+    用 INSERT OR IGNORE 保证幂等；prefixes 非空后，服务重启执行 init_db()
+    不会再进入 _seed() 分支，演示数据也就不会被补灌回来。
+    """
+    conn.executemany(
+        "INSERT OR IGNORE INTO prefixes"
+        "(vrf,cidr,parent_cidr,name,kind,site,updated_at) VALUES(?,?,?,?,?,?,?)",
+        [(vrf, cidr, None, name, "root", "全局", now())
+         for vrf, cidr, name in CLEAN_ROOTS],
+    )
+    conn.commit()
+
+
 # 老库兼容：CREATE TABLE IF NOT EXISTS 不会给已有表补列，这里显式迁移。
 MIGRATIONS = [
     ("prefixes", "description", "TEXT NOT NULL DEFAULT ''"),
@@ -578,9 +607,14 @@ def init_db() -> None:
         _rebuild_vrf_tables(conn)
         _rebuild_snapshot_table(conn)
         if conn.execute("SELECT COUNT(*) FROM prefixes").fetchone()[0] == 0:
-            _seed(conn)
-        # 配置类种子与 IP 地址种子解耦：清空地址数据后重启不会重新灌入 IP，
-        # 但 VRF / 集成源 / 设置 / 工单样例会保持可用（INSERT OR IGNORE 幂等）。
+            # _seed() 会一次灌入 17 个前缀 / 2104 个 IP / 14 天快照 / 1 条审计，
+            # 必须受 IPAM_DEMO_SEED 控制；纯净模式只写三段根，保证空库交付。
+            if demo_seed_enabled():
+                _seed(conn)
+            else:
+                _seed_roots(conn)
+        # 配置类种子与业务数据解耦：VRF / 集成源 / 设置 / 角色 / 认证源用
+        # INSERT OR IGNORE 幂等补齐，清空业务数据后重启不会重新灌入演示记录。
         from . import assets, auth, device_roles, extended  # 局部导入，避免模块循环
         extended.seed_config(conn)
         assets.seed_assets(conn)

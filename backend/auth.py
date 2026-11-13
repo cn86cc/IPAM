@@ -272,13 +272,15 @@ def init_auth(conn: sqlite3.Connection) -> None:
             ("admin", "系统管理员", "admin@ipam.local", ROLE_ADMIN, SOURCE_LOCAL,
              hash_password("Admin@123"), 1, json.dumps(MODULE_KEYS), "[]", now),
         )
-        conn.execute(
-            "INSERT INTO users(username,display_name,email,role,source,password_hash,enabled,"
-            "modules,scopes,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)",
-            ("viewer", "只读观察员", "viewer@ipam.local", ROLE_VIEWER, SOURCE_LOCAL,
-             hash_password("Viewer@123"), 1,
-             json.dumps(DEFAULT_VIEWER_MODULES), json.dumps(DEFAULT_VIEWER_SCOPES), now),
-        )
+        # viewer 是演示用的只读账号，纯净 / 生产模式只保留 admin
+        if db.demo_seed_enabled():
+            conn.execute(
+                "INSERT INTO users(username,display_name,email,role,source,password_hash,enabled,"
+                "modules,scopes,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)",
+                ("viewer", "只读观察员", "viewer@ipam.local", ROLE_VIEWER, SOURCE_LOCAL,
+                 hash_password("Viewer@123"), 1,
+                 json.dumps(DEFAULT_VIEWER_MODULES), json.dumps(DEFAULT_VIEWER_SCOPES), now),
+            )
     # 幂等修正：管理员不允许被限定到局部 CIDR，历史数据统一回落为「全部地址范围」
     conn.execute("UPDATE users SET scopes='[]' WHERE role=? AND scopes <> '[]'", (ROLE_ADMIN,))
     conn.execute("UPDATE users SET modules=? WHERE role=? AND modules <> ?",
