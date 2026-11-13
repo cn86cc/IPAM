@@ -619,8 +619,10 @@ def init_db() -> None:
         extended.seed_config(conn)
         assets.seed_assets(conn)
         device_roles.seed_roles(conn)
-        # 历史页面文案从「分类标签」翻转为「独立地址平面」，并吸收字典外的历史 VRF 引用
+        # 历史页面文案从「分类标签」翻转为「独立地址平面」，清理误建的 'all'
+        # 幽灵平面，再吸收字典外的历史 VRF 引用（'all' 本身永远不补建）
         extended.migrate_vrf_content(conn)
+        extended.drop_phantom_all_plane(conn)
         extended.normalize_vrf_refs(conn)
         conn.commit()
         auth.init_auth(conn)
@@ -634,7 +636,7 @@ def thresholds(conn) -> dict:
         "warn": float(rows.get("warn_threshold", 80)),
         "crit": float(rows.get("crit_threshold", 90)),
         "reservation_ttl_hours": int(rows.get("reservation_ttl_hours", 24)),
-        "default_vrf": rows.get("default_vrf", "default"),
+        "default_vrf": rows.get("default_vrf", ALL_VRFS),
         "gateway_offset": int(rows.get("gateway_offset", 1)),
     }
 

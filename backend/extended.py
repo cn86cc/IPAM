@@ -39,11 +39,23 @@ SOURCES = [
     ("webhook", "告警 Webhook", "Webhook", "https://alert.internal/hooks/ipam", 0, "容量预警与冲突告警外发"),
 ]
 
+# 安装完成后默认进入「全部 VRF · 跨平面对比」只读汇总视图。
+# 'all' 是视图标识，不是 vrfs 表里的真实地址平面；要直接写数据需先切到具体平面。
+DEFAULT_VRF_NOTE = (
+    "登录后默认进入的视图：all = 全部 VRF 跨平面对比（只读），"
+    "填具体平面名则默认进入该平面；用户手动切换后以手动选择为准")
+LEGACY_DEFAULT_VRF_NOTES = (
+    "登录后默认进入的 VRF 地址平面（用户手动切换后以手动选择为准）",
+    "登录后默认进入的 VRF 地址平面",
+    "新建地址空间 / 设备时默认选用的 VRF 分类标签",
+    "新建地址空间时使用的地址平面",
+)
+
 SETTINGS = [
     ("warn_threshold", "80", "容量预警阈值 (%)", "利用率达到该值进入预警，取值范围 0–99"),
     ("crit_threshold", "90", "容量告警阈值 (%)", "利用率达到该值进入告警，需大于预警阈值"),
     ("reservation_ttl_hours", "24", "预留有效期 (小时)", "超时的预留地址由维护任务自动释放回可用池"),
-    ("default_vrf", "default", "默认 VRF", "登录后默认进入的 VRF 地址平面（用户手动切换后以手动选择为准）"),
+    ("default_vrf", db.ALL_VRFS, "默认 VRF", DEFAULT_VRF_NOTE),
     ("gateway_offset", "1", "网关偏移", "每个网段第 N 个地址保留为默认网关"),
 ]
 
@@ -333,13 +345,18 @@ def migrate_vrf_page(conn) -> bool:
 def migrate_vrf_content(conn) -> None:
     """发布迁移：把设置 / VRF 描述 / 页面文案统一翻转为真隔离口径。
 
-    只在值等于历史内置文案时更新，用户自行编辑过的内容不受影响。
+    只在值/文案等于历史内置内容时更新，用户自行编辑过的内容不受影响。
+    其中「默认 VRF」一次性从 default 翻转为 all（全部 VRF 跨平面对比）：
+    仅命中「历史内置 value + 历史内置 note」的行才改写；管理员后来在
+    系统设置里主动设回 default 的行（note 已是新文案）不会被覆盖。
     """
-    conn.execute("UPDATE settings SET note=? WHERE key='default_vrf' AND note IN (?,?,?)",
-                 ("登录后默认进入的 VRF 地址平面（用户手动切换后以手动选择为准）",
-                  "登录后默认进入的 VRF 地址平面",
-                  "新建地址空间 / 设备时默认选用的 VRF 分类标签",
-                  "新建地址空间时使用的地址平面"))
+    conn.execute(
+        "UPDATE settings SET value=?, note=? WHERE key='default_vrf' "
+        "AND value='default' AND note IN (?,?,?,?)",
+        (db.ALL_VRFS, DEFAULT_VRF_NOTE, *LEGACY_DEFAULT_VRF_NOTES))
+    conn.execute(
+        "UPDATE settings SET note=? WHERE key='default_vrf' AND note IN (?,?,?,?)",
+        (DEFAULT_VRF_NOTE, *LEGACY_DEFAULT_VRF_NOTES))
     for name, old, new in (
         ("default", "生产 / 办公 / DMZ 共用的分类标签", "生产 / 办公 / DMZ 共用的默认地址平面"),
         ("vrf-prod", "生产业务网段分类标签", "生产业务独立地址平面"),
@@ -361,7 +378,10 @@ def normalize_vrf_refs(conn) -> int:
         "SELECT DISTINCT vrf FROM prefixes WHERE vrf IS NOT NULL AND vrf<>''")}
     used |= {r[0] for r in conn.execute(
         "SELECT DISTINCT vrf FROM asset_devices WHERE vrf IS NOT NULL AND vrf<>''")}
-    used.add(str(db.thresholds(conn)["default_vrf"] or "default"))
+    configured = str(db.thresholds(conn)["default_vrf"] or "").strip()
+    # 'all' 是跨平面对比视图标识，不是真实地址平面，绝不能被补建进 vrfs 字典
+    if configured and configured != db.ALL_VRFS:
+        used.add(configured)
     added = 0
     for value in sorted(used - known):
         try:
@@ -382,10 +402,20 @@ def _vrf_name(value) -> str:
     return name
 
 
+def protected_vrf(conn) -> str:
+    """不可删除的地址平面：默认具体平面；默认视图为 'all' 时保护内置主平面 default。
+
+    'all' 只是汇总视图，不对应 vrfs 表里的行。若不加保护，默认视图改成 all
+    后所有平面（含审计 / Webhook 在汇总视图下的兜底落点 default）都能被删掉。
+    """
+    configured = str(db.thresholds(conn)["default_vrf"] or "").strip()
+    return "default" if configured == db.ALL_VRFS else configured
+
+
 def list_vrfs(conn) -> list[dict]:
     """VRF 地址平面清单：每个平面的前缀 / 子网 / 设备 / 已登记 IP / 容量统计。"""
     global_th = db.thresholds(conn)
-    default_vrf = global_th["default_vrf"]
+    protected = protected_vrf(conn)
     rows = [dict(r) for r in conn.execute("SELECT * FROM vrfs ORDER BY name")]
     for r in rows:
         name = r["name"]
@@ -416,7 +446,8 @@ def list_vrfs(conn) -> list[dict]:
         r["free"] = sum(p["free"] for p in nets)
         r["util"] = round(r["occupied"] / r["total"] * 100, 1) if r["total"] else 0
         r["reference_count"] = r["prefix_count"] + r["device_count"] + r["ip_count"]
-        r["is_default"] = name == default_vrf
+        # is_default 同时承载「默认进入的平面」与「受删除保护的内置主平面」
+        r["is_default"] = name == protected
     return rows
 
 
@@ -499,6 +530,25 @@ def create_vrf(conn, payload: dict) -> dict:
 # VRF 改名时必须同步的所有业务表（审计 / 快照属历史记录，改名同步但不阻止删除）
 VRF_TABLES = ("prefixes", "ip_addresses", "asset_devices", "discovery_records",
               "reconciliation_diffs", "tickets", "audit_logs", "utilization_snapshots")
+PHANTOM_PLANE_TABLES = VRF_TABLES + ("webhook_events",)
+
+
+def drop_phantom_all_plane(conn) -> int:
+    """自愈：清理把视图标识 'all' 误当成真实 VRF 补建进字典的历史脏数据。
+
+    早期 normalize_vrf_refs() 会把 settings.default_vrf 的值补建为平面，
+    默认视图改成 all 后就会多出一张空的 'all' 平面，让顶栏出现重复选项。
+    只有在全部带 vrf 的表里都查不到引用时才删除；有引用一律原样保留，
+    由管理员在界面上决定迁移或删除，绝不自动丢数据。返回删除行数 0/1。
+    """
+    if conn.execute("SELECT 1 FROM vrfs WHERE name=?", (db.ALL_VRFS,)).fetchone() is None:
+        return 0
+    for table in PHANTOM_PLANE_TABLES:
+        if conn.execute(f"SELECT 1 FROM {table} WHERE vrf=? LIMIT 1",
+                        (db.ALL_VRFS,)).fetchone():
+            return 0
+    conn.execute("DELETE FROM vrfs WHERE name=?", (db.ALL_VRFS,))
+    return 1
 
 
 def update_vrf(conn, name: str, payload: dict) -> dict:
@@ -608,14 +658,15 @@ def _migrate_plane_data(conn, src: str, dst: str) -> dict:
 def delete_vrf(conn, name: str, target_vrf: str | None = None) -> dict:
     """删除地址平面；指定 target_vrf 时把该平面全部业务数据迁移过去再删除。
 
-    默认 VRF 永远不可删除。未指定迁移目标且平面仍有数据时拒绝删除，
+    默认 / 内置主平面永远不可删除。未指定迁移目标且平面仍有数据时拒绝删除，
     避免整张地址空间凭空消失。
     """
     row = conn.execute("SELECT * FROM vrfs WHERE name=?", (name,)).fetchone()
     if row is None:
         raise LookupError("VRF 地址平面不存在")
-    if name == db.thresholds(conn)["default_vrf"]:
-        raise ValueError("默认 VRF 不可删除，请先在「系统设置」中更换默认地址平面")
+    if name == protected_vrf(conn):
+        raise ValueError("默认 VRF 不可删除（默认视图为 all 时内置主平面 default 同样受保护），"
+                         "请先在「系统设置」中更换默认地址平面")
     target = str(target_vrf or "").strip()
     if target:
         if target == name:

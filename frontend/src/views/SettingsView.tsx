@@ -130,7 +130,9 @@ export default function SettingsView({ notify, onChanged, refreshKey }: ViewProp
           <Card title="VRF 地址平面" hint="01 接入层 · 模型级隔离">
             <p className="footnote" style={{ marginTop: 0, lineHeight: 1.8 }}>
               每个 VRF 是独立地址平面，(VRF, CIDR) / (VRF, IP) 为唯一键，同一网段可跨平面重复登记；
-              「默认 VRF」决定登录后默认进入的平面。增删改、改名级联与引用保护请到「VRF 地址平面」页操作。
+              「默认 VRF」决定登录后默认进入的视图：默认 <span className="mono">all</span> 为「全部 VRF · 跨平面对比」（只读汇总），
+              想登录即写入可改成具体平面名；用户在顶栏手动切换过平面则以手动选择为准。
+              增删改、改名级联与引用保护请到「VRF 地址平面」页操作。
             </p>
             {vrfs.map(v => (
               <div className="source-row" key={v.name}>

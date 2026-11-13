@@ -19,9 +19,10 @@ let apiScope = 'all'
 export function setApiScope(scope: string) { apiScope = scope || 'all' }
 
 /** 当前 VRF 地址平面：所有地址类接口都据此在后端做 (vrf, ...) 隔离。
- *  'all' 表示跨平面对比视图，写操作会被后端拒绝。 */
-let apiVrf = 'default'
-export function setApiVrf(vrf: string) { apiVrf = vrf || 'default' }
+ *  安装后默认 'all'（跨平面对比汇总视图，只读）；登录后以 /api/auth/me
+ *  返回的 default_vrf 为准，用户在顶栏手动切换过则以手动选择为准。 */
+let apiVrf = 'all'
+export function setApiVrf(vrf: string) { apiVrf = vrf || 'all' }
 export function getApiVrf() { return apiVrf }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {

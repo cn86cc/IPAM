@@ -36,7 +36,7 @@ export default function VrfPageView({ notify, onChanged, refreshKey, onOpenPrefi
   )
   const [pageData, vrfData, settings, overlap] = data ?? [null, null, null, null]
   const vrfs: Vrf[] = vrfData?.items ?? []
-  const defaultVrf = settings?.thresholds.default_vrf ?? 'default'
+  const defaultVrf = settings?.thresholds.default_vrf ?? 'all'
   const totalPrefixes = vrfs.reduce((n, v) => n + v.prefix_count, 0)
   const totalDevices = vrfs.reduce((n, v) => n + (v.device_count ?? 0), 0)
   const totalIps = vrfs.reduce((n, v) => n + (v.ip_count ?? 0), 0)
@@ -229,7 +229,8 @@ export default function VrfPageView({ notify, onChanged, refreshKey, onOpenPrefi
           <p>每个 VRF 在本系统是一张<b>独立地址平面</b>：唯一键是 (VRF, CIDR) 与 (VRF, IP)，
             同一 CIDR / IP 可以在不同平面重复登记而互不冲突；前缀重叠校验、容量统计、分配 / 回收、
             审计与趋势均限定在各自平面内。用户可见范围支持「VRF:CIDR」按平面授权。
-            顶栏「当前地址平面」决定所有读写操作的落点，「全部 VRF」为只读跨平面对比视图。</p>
+            顶栏「当前地址平面」决定所有读写操作的落点，「全部 VRF」为只读跨平面对比视图。
+            安装完成后默认进入「全部 VRF · 跨平面对比」，需先在顶栏选定具体平面再执行写入。</p>
         </div>
       </div>
 
@@ -238,7 +239,7 @@ export default function VrfPageView({ notify, onChanged, refreshKey, onOpenPrefi
         <MiniStat label="平面内前缀" value={totalPrefixes} foot="CIDR 可跨平面复用" tone="teal" />
         <MiniStat label="关联设备" value={totalDevices} foot={`已登记 IP ${totalIps} 个`} />
         <MiniStat label="当前平面" value={currentPlane === 'all' ? '全部（对比）' : currentPlane}
-          foot={`默认 ${defaultVrf}`} />
+          foot={defaultVrf === 'all' ? '默认 全部 VRF · 跨平面对比' : `默认 ${defaultVrf}`} />
       </div>
 
       <div className="block-grid">
@@ -304,7 +305,9 @@ export default function VrfPageView({ notify, onChanged, refreshKey, onOpenPrefi
                 <div className="vrf-head">
                   <b className="vrf-name mono">{v.name}</b>
                   <div className="inline">
-                    {v.is_default && <Tag text="默认" tone="blue" />}
+                    {v.is_default && (
+                      <Tag text={defaultVrf === 'all' ? '内置' : '默认'} tone="blue" />
+                    )}
                     {currentPlane === v.name && <Tag text="当前" tone="teal" />}
                     <button className="icon-btn sm" title="切换到此地址平面"
                       disabled={currentPlane === v.name}
@@ -316,7 +319,8 @@ export default function VrfPageView({ notify, onChanged, refreshKey, onOpenPrefi
                       <Icon name="edit" size={12} />
                     </button>
                     <button className="icon-btn sm"
-                      title={v.is_default ? '默认地址平面不可删除'
+                      title={v.is_default
+                        ? (defaultVrf === 'all' ? '内置主平面不可删除' : '默认地址平面不可删除')
                         : v.reference_count > 0 ? '平面内仍有数据，删除时可选择整体迁移到其它平面'
                           : '删除此地址平面'}
                       disabled={v.is_default}
@@ -438,7 +442,7 @@ export default function VrfPageView({ notify, onChanged, refreshKey, onOpenPrefi
           每次保存写入审计日志与 Webhook 事件，保存人取当前登录账号。地址平面改名会在同一事务内同步
           <span className="mono">prefixes</span>、<span className="mono">ip_addresses</span>、
           <span className="mono">asset_devices</span>、发现 / 对账 / 工单 / 审计 / 快照等全部业务表的
-          <span className="mono">vrf</span> 字段与默认 VRF 设置；默认平面不可删除，有数据的平面删除时
+          <span className="mono">vrf</span> 字段与默认 VRF 设置；默认 / 内置主平面不可删除，有数据的平面删除时
           可指定目标平面整体迁移（同 CIDR / IP 冲突时后端拒绝，避免覆盖）。每个平面还能单独设置
           容量预警 / 告警阈值，留空则沿用系统全局设置。<br />
           模型级隔离：<span className="mono">(vrf, cidr)</span> 与 <span className="mono">(vrf, addr)</span> 为复合唯一键，

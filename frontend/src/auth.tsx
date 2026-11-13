@@ -32,11 +32,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [scope, setScopeState] = useState('all')
-  /** 系统设置里的默认地址平面；只有用户没手动切换过时才会跟随它 */
-  const [defaultVrf, setDefaultVrf] = useState('default')
+  /** 系统设置里的默认视图；只有用户没手动切换过时才会跟随它。
+   *  出厂默认 'all'：安装完成后先看「全部 VRF · 跨平面对比」（只读）。 */
+  const [defaultVrf, setDefaultVrf] = useState('all')
   const [vrf, setVrfState] = useState(() => {
     const saved = localStorage.getItem('ipam.vrf')
-    const initial = saved || 'default'
+    const initial = saved || 'all'
     setApiVrf(initial)
     return initial
   })
@@ -46,7 +47,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setModules(res.modules)
     setScopeState('all')
     setApiScope('all')
-    const configured = res.default_vrf || 'default'
+    const configured = res.default_vrf || 'all'
     setDefaultVrf(configured)
     // 区分「系统默认」与「用户手动选择」：手动选择写入 localStorage 并优先，
     // 未选择过则跟随设置（改配置后下次登录 / 刷新立即生效，不会被写死）。
@@ -101,7 +102,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const setVrf = useCallback((next: string) => {
-    const value = next || 'default'
+    const value = next || 'all'
     setVrfState(value)
     setApiVrf(value)
     localStorage.setItem('ipam.vrf', value)

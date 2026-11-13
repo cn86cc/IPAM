@@ -65,6 +65,11 @@ SQLite  ipam.db（WAL 模式，启动时自动建表 / 幂等迁移）
 
 `VRF 地址平面`是全局概念：顶栏切换器决定当前平面，地址类数据按 `(vrf, cidr)` / `(vrf, addr)` 隔离；「全部 VRF」是只读汇总视图，写操作会被后端拒绝。
 
+> **安装后的默认视图**：登录进去顶栏显示「**全部 VRF · 跨平面对比**」（数据库设置 `default_vrf=all`），先看三个平面的汇总数据。
+> 该视图是**只读**的，页面顶部会给出提示。要建前缀、划子网、分配 / 回收 IP、录入设备时，**先在顶栏下拉里选定 `default` / `vrf-prod` / `vrf-lab` 等具体平面**，写操作才会放行。
+> 若希望登录即进入某个具体平面，到「系统设置 → 默认 VRF」把 `all` 改成该平面名即可；用户在顶栏手动切换过平面时，以手动选择为准（浏览器本地记住）。
+> 注意 `all` 只是汇总视图标识，不是一张真实地址平面，系统不会把它写进 VRF 字典；旧版本若曾误建同名的空平面，服务重启时会自动清理（平面上已有业务数据则原样保留，不自动删数据）。
+
 ---
 
 ## 2. 开始之前
@@ -497,7 +502,7 @@ cd /opt/ipam && git pull --ff-only && sudo systemctl restart ipam
 
 ### 系统内配置（登录后在界面里改，不用改代码）
 
-- **系统设置**：利用率告警阈值、预留 TTL、默认 VRF、网关偏移；阈值可按 VRF 单独设置。
+- **系统设置**：利用率告警阈值、预留 TTL、默认 VRF、网关偏移；阈值可按 VRF 单独设置。默认 VRF 出厂为 `all`（全部 VRF · 跨平面对比，只读），改成具体平面名则登录后直接进入该平面。
 - **VRF 地址平面**：新增 / 编辑 / 删除平面、跨平面地址复用报告、删除时迁移数据。
 - **用户与权限**：本地用户、角色、模块可见性、CIDR 可见范围（`vrf:CIDR`）。
 - **认证源**：本地、LDAP/AD、SSO(OIDC)。
@@ -525,9 +530,9 @@ cd /opt/ipam && git pull --ff-only && sudo systemctl restart ipam
 | 8 | API 文档 | `/docs` → `200` |
 | 9 | VRF 隔离 | 带 `X-IPAM-VRF: default/vrf-lab/vrf-prod` 请求 `/api/spaces` 各 1 条根；`all` 为 3 条 |
 | 10 | 汇总写保护 | `X-IPAM-VRF: all` 下 POST `/api/subnets` → `400` |
-| 11 | 纯净库 | `users=1`、`prefixes=3`、`ip_addresses=0`、业务表合计 `0` |
+| 11 | 纯净库 | `users=1`、`prefixes=3`、`ip_addresses=0`、业务表合计 `0`、`default_vrf=all`，且 VRF 字典里没有名为 `all` 的平面 |
 | 12 | 重启不回灌 | `sudo systemctl restart ipam` 后再查第 11 项，仍为 0 |
-| 13 | 回归测试 | `./install.sh --test` → `Ran 19 tests ... OK` |
+| 13 | 回归测试 | `./install.sh --test` → `OK`（全部用例通过，数量随版本增加） |
 | 14 | 日志 | `sudo journalctl -u ipam -n 400 \| grep -Ei 'error\|traceback'` → 无输出 |
 | 15 | 完整性 | Python 查 `PRAGMA integrity_check` → `ok` |
 

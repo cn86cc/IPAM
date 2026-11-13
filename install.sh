@@ -303,16 +303,23 @@ print("    模式：" + ("纯净 / 生产（IPAM_DEMO_SEED=0）" if clean else "
 print("    users=%d  prefixes=%d  ip_addresses=%d  业务表合计=%d  integrity=%s" % (
     counts.get("users", 0), counts.get("prefixes", 0), counts.get("ip_addresses", 0),
     biz_total, c.execute("PRAGMA integrity_check").fetchone()[0]))
+row = c.execute("SELECT value FROM settings WHERE key='default_vrf'").fetchone()
+default_vrf = row[0] if row else "(缺失)"
+planes = [r[0] for r in c.execute("SELECT name FROM vrfs ORDER BY name")]
+print("    default_vrf=%s（all = 全部 VRF · 跨平面对比）  地址平面=%s" % (
+    default_vrf, ",".join(planes)))
 # 只对「全新库」做硬验收：已有数据的库重跑属于正常迁移，不应被误判
 if clean and os.environ.get("IPAM_DB_EXISTED") == "0":
     roots = list(c.execute("SELECT vrf,cidr,kind FROM prefixes ORDER BY cidr"))
     bad = (biz_total != 0 or counts.get("users", 0) != 1
-           or len(roots) != 3 or any(r[2] != "root" for r in roots))
+           or len(roots) != 3 or any(r[2] != "root" for r in roots)
+           or default_vrf != db.ALL_VRFS or db.ALL_VRFS in planes)
     if bad:
-        print("    [错误] 纯净模式全新库验收失败：应仅含三段 RFC1918 根 + admin，业务表为空")
+        print("    [错误] 纯净模式全新库验收失败：应仅含三段 RFC1918 根 + admin，"
+              "业务表为空，且默认视图为 all 而 all 不是真实地址平面")
         c.close()
         raise SystemExit(1)
-    print("    [OK] 纯净库验收通过（三段根 / 仅 admin / 业务表全空）")
+    print("    [OK] 纯净库验收通过（三段根 / 仅 admin / 业务表全空 / 默认全部 VRF 视图）")
 c.close()
 PYCODE
 
