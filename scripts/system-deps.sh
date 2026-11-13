@@ -11,6 +11,7 @@
 # 环境变量：
 #   IPAM_NEED_NGINX=0|1   是否需要 nginx（默认 1；只跑本机单端口可设 0）
 #   IPAM_ASSUME_YES        apt/dnf 是否加 -y（默认加）
+#   IPAM_MOCK_MISSING      逗号分隔的命令名，强制视为缺失（仅供离线测试 / 排障）
 #   PIP_INDEX_URL          仅影响后续 Python 依赖，不影响本脚本
 #
 # 检测项：python3 >= 3.10、venv + 内置 pip 可真实创建、git、curl、nginx。
@@ -25,7 +26,12 @@ say()    { printf '\n==> %s\n' "$*"; }
 ok()     { printf '    [OK] %s\n' "$*"; }
 warn()   { printf '    [!] %s\n' "$*"; }
 die()    { printf '\n[错误] %s\n' "$*" >&2; exit 1; }
-has_cmd(){ command -v "$1" >/dev/null 2>&1; }
+# 离线测试 / 排障可强制把某命令视为缺失，避免断言受宿主机真实环境干扰。
+# 例如 IPAM_MOCK_MISSING=nginx ./scripts/system-deps.sh --render
+has_cmd(){
+  case ",${IPAM_MOCK_MISSING:-}," in *",$1,"*) return 1 ;; esac
+  command -v "$1" >/dev/null 2>&1
+}
 
 usage() { sed -n '2,18p' "$0" | sed 's/^# \{0,1\}//'; }
 

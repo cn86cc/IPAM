@@ -175,9 +175,11 @@ class DeployScriptsTest(unittest.TestCase):
             self.assertIn("全部依赖齐备", r.stdout)
             self.assertIn("venv + 内置 pip", r.stdout)
 
-            # 隐藏 nginx 后，--render 应给出 apt 安装命令（且只是打印，不执行）
-            (bin_dir / "nginx").unlink()
-            r2 = run(["./scripts/system-deps.sh", "--render"], env=base_env)
+            # 强制把 nginx 视为缺失：不能只删 mock 文件，真实 Ubuntu 上
+            # /usr/sbin/nginx 仍会被 command -v 找到，会让本用例假阳性失败。
+            # IPAM_MOCK_MISSING 让断言与宿主机真实环境解耦（--render 只打印不执行）。
+            force_missing = dict(base_env, IPAM_MOCK_MISSING="nginx")
+            r2 = run(["./scripts/system-deps.sh", "--render"], env=force_missing)
             self.assertEqual(r2.returncode, 0, r2.stdout + r2.stderr)
             self.assertIn("apt-get install -y", r2.stdout)
             self.assertIn("nginx", r2.stdout)
