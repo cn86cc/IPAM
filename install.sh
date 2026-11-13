@@ -1,23 +1,10 @@
 #!/usr/bin/env bash
 # =============================================================================
-# IPAM · IPv4 地址管理平台 —— 一键部署脚本（macOS / Linux）
-# -----------------------------------------------------------------------------
-# 用法： ./install.sh [选项]
-#   （无参数） 检测环境 -> 复用/创建虚拟环境 -> 只补装缺失依赖 -> 构建前端 -> 初始化数据库
-#   --start    完成上述步骤后，前台启动单端口服务（Ctrl+C 停止）
-#   --rebuild  强制重新构建前端（修改了 frontend/src 之后使用）
-#   --test     额外运行回归测试（tests/，基于标准库 unittest，无需额外依赖）
-#   --check    只检查环境与各组件状态，不安装、不修改任何文件
-#   --help     显示帮助
-#
-# 环境变量：
-#   IPAM_DEMO_SEED=0        纯净/生产模式：全新库仅三段 RFC1918 根 + 内置配置 + admin
-#                            （默认 1，会灌入完整演示业务数据）
-#   IPAM_HOST / IPAM_PORT   --start 的监听地址/端口（默认 127.0.0.1 / 8000）
-#   PIP_INDEX_URL            Python 镜像，例如 https://pypi.tuna.tsinghua.edu.cn/simple
-#   npm_config_registry      npm 镜像，例如 https://registry.npmmirror.com
-#
-# 兼容：Python 3.10+ / bash 3.2+（macOS 自带 bash） / Ubuntu、Debian、CentOS、macOS
+# IPAM · IPv4 地址管理平台 —— 安装 / 部署主入口（macOS / Linux）
+#   --deploy 会自动串联：scripts/system-deps.sh（系统依赖）
+#                      → 本脚本（应用安装）
+#                      → scripts/system-config.sh（systemd + nginx）
+#   纯净服务器可直接用 bootstrap.sh，一条命令完成全部。
 # =============================================================================
 set -euo pipefail
 cd "$(dirname "$0")"
@@ -25,14 +12,45 @@ ROOT="$(pwd)"
 VENV="$ROOT/.venv"
 PY="$VENV/bin/python"
 DIST="$ROOT/frontend/dist"
+DEPS="$ROOT/scripts/system-deps.sh"
+CONFIG="$ROOT/scripts/system-config.sh"
 
 START=0
 REBUILD=0
 RUN_TEST=0
 CHECK_ONLY=0
+DEPLOY=0
 
 usage() {
-  sed -n '2,21p' "$0" | sed 's/^# \{0,1\}//'
+  cat <<'EOF'
+用法： ./install.sh [选项]
+
+  （无参数） 本机安装：虚拟环境 → Python 依赖 → 前端 → 数据库 → 自检
+  --deploy   服务器一键部署（仅 Linux）：自动装系统依赖 → 应用安装 → 配 systemd
+             + nginx → 启动并 HTTP 验收；默认纯净模式并附带回归测试
+  --start    完成本机安装后前台启动服务（Ctrl+C 停止，不能与 --deploy 同用）
+  --rebuild  强制重新构建前端（修改了 frontend/src 之后使用）
+  --test     额外运行回归测试（tests/，标准库 unittest，无需额外依赖）
+  --check    只检查环境与各组件状态，不安装、不修改任何文件
+  --help     显示本帮助
+
+一键安装（纯净 Linux 服务器，推荐）：
+  curl -fsSL -o /tmp/ipam-bootstrap.sh https://raw.githubusercontent.com/cn86cc/IPAM/main/bootstrap.sh
+  bash /tmp/ipam-bootstrap.sh
+
+环境变量：
+  IPAM_DEMO_SEED=0|1  数据模式（0=纯净生产库；--deploy 默认 0，本机默认 1）
+  IPAM_HOST/IPAM_PORT  --start 的监听地址/端口（默认 127.0.0.1/8000）
+  IPAM_HTTP_PORT       --deploy 时 nginx 对外端口（默认 80）
+  IPAM_DIR             --deploy 时项目目录（默认当前目录）
+  IPAM_WITH_NGINX=0    --deploy 时不配置 nginx，只配 systemd
+  IPAM_SKIP_TESTS=1    --deploy 时跳过回归测试
+  IPAM_NEED_NGINX=0    --deploy 时不安装 nginx
+  PIP_INDEX_URL        Python 镜像，如 https://pypi.tuna.tsinghua.edu.cn/simple
+  npm_config_registry  npm 镜像，如 https://registry.npmmirror.com
+
+兼容：Python 3.10+ / bash 3.2+（macOS 自带 bash） / Ubuntu Debian CentOS macOS
+EOF
 }
 
 for arg in "$@"; do
@@ -41,6 +59,7 @@ for arg in "$@"; do
     --rebuild) REBUILD=1 ;;
     --test)    RUN_TEST=1 ;;
     --check)   CHECK_ONLY=1 ;;
+    --deploy)  DEPLOY=1 ;;
     -h|--help) usage; exit 0 ;;
     *) printf '未知参数：%s（用 --help 查看用法）\n' "$arg" >&2; exit 2 ;;
   esac
@@ -51,18 +70,58 @@ ok()   { printf '    [OK] %s\n' "$*"; }
 warn() { printf '    [!] %s\n' "$*"; }
 die()  { printf '\n[错误] %s\n' "$*" >&2; exit 1; }
 
-# ---------------------------------------------------------------- 0. 环境检测
 OS_NAME="$(uname -s)"
 case "$OS_NAME" in
   Darwin|Linux) ;;
   *) die "仅支持 macOS / Linux，当前系统：${OS_NAME}（Windows 请用 WSL2）" ;;
 esac
 
+# ------------------------------------------------------------ --deploy 前置
+if [ "$DEPLOY" -eq 1 ]; then
+  [ "$OS_NAME" = "Linux" ] || die "--deploy 仅用于 Linux 服务器；macOS 请用 ./install.sh --start"
+  [ "$START" -eq 0 ] || die "--deploy 与 --start 不能同时使用（--deploy 用 systemd 常驻）"
+  [ -f "$DEPS" ]   || die "缺少 $DEPS"
+  [ -f "$CONFIG" ] || die "缺少 $CONFIG"
+  # 服务器部署默认纯净模式；用户显式设置了就尊重用户
+  if [ -z "${IPAM_DEMO_SEED:-}" ]; then export IPAM_DEMO_SEED=0; fi
+  if [ "${IPAM_SKIP_TESTS:-0}" != "1" ]; then RUN_TEST=1; fi
+  export IPAM_DIR="$ROOT"
+  export IPAM_PORT="${IPAM_PORT:-8000}"
+  export IPAM_HTTP_PORT="${IPAM_HTTP_PORT:-80}"
+fi
+
+if [ "$DEPLOY" -eq 1 ] && [ "$CHECK_ONLY" -eq 0 ]; then
+  say "[部署 1/3] 检查并安装系统依赖（python3-venv / pip / git / curl / nginx）"
+  bash "$DEPS" --apply || die "系统依赖安装失败，详见上方报错。排障：bash scripts/system-deps.sh --check"
+fi
+
+# ------------------------------------------------------------ 0. 环境检测
 check_python() {
-  command -v python3 >/dev/null 2>&1 || die "未找到 python3。macOS: brew install python@3.12；Ubuntu: sudo apt install -y python3 python3-venv"
+  command -v python3 >/dev/null 2>&1 \
+    || die "未找到 python3。Ubuntu: sudo apt install -y python3 python3-venv；或直接用 ./install.sh --deploy 自动安装"
   python3 -c 'import sys; sys.exit(0 if sys.version_info >= (3, 10) else 1)' \
     || die "Python 版本过低（$(python3 -V 2>&1)），本项目要求 3.10+，推荐 3.11 / 3.12"
   ok "Python $(python3 -V 2>&1 | awk '{print $2}')（满足 3.10+）"
+
+  # 关键：不能用 `python3 -m venv --help` 判断！Ubuntu 最小化镜像会返回 0，
+  # 但真正创建时因缺 ensurepip 而失败。已有可用 .venv 时无需创建，可直接跳过。
+  if [ -x "$PY" ] && "$PY" -m pip --version >/dev/null 2>&1; then
+    ok "已有可用 .venv（含 pip），跳过系统 venv 探测"
+    return 0
+  fi
+  local tmp
+  tmp="$(mktemp -d 2>/dev/null)" || die "无法创建临时目录，无法验证 venv"
+  if python3 -m venv "$tmp/probe" >/dev/null 2>&1 \
+     && [ -x "$tmp/probe/bin/python" ] \
+     && "$tmp/probe/bin/python" -m pip --version >/dev/null 2>&1; then
+    rm -rf "$tmp"
+    ok "venv 可真实创建且内置 pip 可用"
+  else
+    rm -rf "$tmp"
+    die "python3 的 venv 无法真实创建或缺内置 pip（Ubuntu 最小化安装常见）。
+     解决：sudo apt install -y python3-venv python3-pip
+     或直接一键：./install.sh --deploy（自动安装全部系统依赖）"
+  fi
 }
 
 # 后端直接托管 frontend/dist；只有需要构建前端时才强制要求 Node.js
@@ -108,7 +167,7 @@ PYCODE
 }
 
 show_status() {
-  printf '\n--- 组件状态 ---\n'
+  printf '\n--- 应用层组件状态 ---\n'
   [[ -x "$PY" ]] && printf '  虚拟环境 .venv        : 已存在\n' || printf '  虚拟环境 .venv        : 不存在（将创建）\n'
   if [[ -x "$PY" ]] && py_deps_ok; then
     printf '  Python 依赖           : 齐备（跳过安装）\n'
@@ -130,16 +189,22 @@ show_status() {
     MODE_NOTE="演示模式：含地址 / 设备 / 工单等示例数据"
   fi
   printf '  IPAM_DEMO_SEED        : %s（%s）\n' "${IPAM_DEMO_SEED:-1}" "$MODE_NOTE"
-  printf '\n检查完成，未修改任何文件。\n'
+  printf '  部署模式              : %s\n' "$([ "$DEPLOY" -eq 1 ] && printf '%s' '服务器一键部署（含系统依赖 + systemd + nginx）' || printf '%s' '本机安装')"
 }
 
-say "环境检测（系统：${OS_NAME}）"
+say "应用层环境检测（系统：${OS_NAME}）"
 check_python
 check_node
 ok "项目目录：$ROOT"
 
 if [[ "$CHECK_ONLY" -eq 1 ]]; then
   show_status
+  if [ "$DEPLOY" -eq 1 ]; then
+    printf '\n--- 系统层状态（只读预览）---\n'
+    bash "$DEPS" --check || true
+    bash "$CONFIG" --check || true
+  fi
+  printf '\n检查完成，未安装、未修改任何文件。\n'
   exit 0
 fi
 
@@ -147,7 +212,7 @@ if [[ "${IPAM_DEMO_SEED:-1}" == "0" ]]; then
   ok "纯净模式：全新库只保留三段 RFC1918 根 + 内置配置 + admin，业务表为空"
 else
   warn "演示模式 IPAM_DEMO_SEED=1：首次初始化会写入完整演示业务数据（地址 / 设备 / 工单 / 对账）。"
-  warn "生产部署请改用： IPAM_DEMO_SEED=0 ./install.sh"
+  warn "生产部署请改用： IPAM_DEMO_SEED=0 ./install.sh 或 ./install.sh --deploy"
 fi
 
 # ---------------------------------------------------------------- 1. 虚拟环境
@@ -159,7 +224,7 @@ else
     die ".venv 已存在但 $PY 不可执行，可能是残留的损坏环境；请先手动移除 .venv 后重跑"
   fi
   python3 -m venv "$VENV" \
-    || die "创建虚拟环境失败。Ubuntu/Debian 请先执行：sudo apt install -y python3-venv"
+    || die "创建虚拟环境失败。Ubuntu/Debian 请先执行：sudo apt install -y python3-venv；或 ./install.sh --deploy"
   ok "已创建 .venv"
 fi
 "$PY" -c 'import sys; sys.exit(0 if sys.version_info >= (3, 10) else 1)' \
@@ -262,6 +327,13 @@ if [[ "$RUN_TEST" -eq 1 ]]; then
   ok "回归测试通过"
 fi
 
+# ---------------------------------------------------------------- --deploy 后置
+if [ "$DEPLOY" -eq 1 ]; then
+  say "[部署 3/3] 配置 systemd + nginx 并启动"
+  bash "$CONFIG" --apply || die "系统配置失败。排障：bash scripts/system-config.sh --check"
+  exit 0
+fi
+
 # ---------------------------------------------------------------- 启动 / 收尾
 if [[ "$START" -eq 1 ]]; then
   HOST="${IPAM_HOST:-127.0.0.1}"
@@ -283,17 +355,18 @@ if [[ "$START" -eq 1 ]]; then
 fi
 
 printf '\n==============================================================\n'
-printf ' 部署完成！接下来任选一种方式启动：\n'
-printf '   生产/单端口（推荐）: ./install.sh --start        -> http://127.0.0.1:8000\n'
-printf '   开发/热更新        : ./start.sh                 -> http://127.0.0.1:5173\n'
-printf '   允许局域网访问     : IPAM_HOST=0.0.0.0 ./install.sh --start\n'
-printf '   换端口             : IPAM_PORT=8001 ./install.sh --start\n'
-printf '   运行测试           : ./install.sh --test\n'
-printf '   纯净模式安装       : IPAM_DEMO_SEED=0 ./install.sh\n'
-printf '   默认管理员         : admin / Admin@123\n'
+printf ' 安装完成！接下来任选一种方式启动：\n'
+printf '   本机单端口（推荐）: ./install.sh --start        -> http://127.0.0.1:8000\n'
+printf '   服务器一键部署    : ./install.sh --deploy       -> systemd + nginx 常驻\n'
+printf '   开发/热更新       : ./start.sh                 -> http://127.0.0.1:5173\n'
+printf '   允许局域网访问    : IPAM_HOST=0.0.0.0 ./install.sh --start\n'
+printf '   换端口            : IPAM_PORT=8001 ./install.sh --start\n'
+printf '   运行测试          : ./install.sh --test\n'
+printf '   纯净模式安装      : IPAM_DEMO_SEED=0 ./install.sh\n'
+printf '   默认管理员        : admin / Admin@123\n'
 if [[ "${IPAM_DEMO_SEED:-1}" == "0" ]]; then
-  printf '   本次模式           : 纯净（已验收：三段根 / 仅 admin / 业务表全空）\n'
+  printf '   本次模式          : 纯净（已验收：三段根 / 仅 admin / 业务表全空）\n'
 else
-  printf '   本次模式           : 演示（含示例业务数据）\n'
+  printf '   本次模式          : 演示（含示例业务数据）\n'
 fi
 printf '==============================================================\n'
