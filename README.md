@@ -14,8 +14,7 @@
 4. [启动命令速查](#4-启动命令速查)
 5. [配置说明](#5-配置说明)
 6. [常见排错](#6-常见排错)
-7. [用 GitHub Desktop 上传到 GitHub](#7-用-github-desktop-上传到-github)
-8. [目录结构](#8-目录结构)
+7. [目录结构](#8-目录结构)
 
 ---
 
@@ -226,38 +225,8 @@ IPAM_DEMO_SEED=0 IPAM_HOST=0.0.0.0 IPAM_PORT=8000 ./install.sh --start
 
 ---
 
-## 7. 用 GitHub Desktop 上传到 GitHub
 
-### 准备
-
-1. 确认项目根目录里有 `.gitignore`、`README.md`、`install.sh`；
-2. **确认敏感文件不会被提交**：`ipam.db`、`ipam.db-wal`、`backups/`、`.venv/`、`frontend/node_modules/`、`.workbuddy/`、`.DS_Store` 都不应出现在待提交列表里（它们已被 `.gitignore` 排除）；
-3. 安装并登录 [GitHub Desktop](https://desktop.github.com/)。
-
-### 上传步骤
-
-1. 打开 GitHub Desktop → 菜单 **File → Add Local Repository…**（或首页 `Add an Existing Repository`）。
-2. 点 **Choose…**，选中整个项目文件夹（就是含 `backend/`、`frontend/`、`install.sh` 的那一层），点 **Add Repository**。
-3. 若提示 *"This directory does not appear to be a Git repository"*，点 **create a repository**：
-   - Name 填 `ipam`；
-   - **Git Ignore 选 `None`**（我们已经有手写 `.gitignore`，别让软件覆盖它）；
-   - License 按需选择，可不选；
-   - 点 **Create Repository**。
-4. 左侧 **Changes** 里检查文件清单：应该看到 `backend/`、`frontend/`（不含 `node_modules`）、`tests/`、`README.md`、`install.sh`、`start.sh`、`.gitignore`；**不应该**看到 `.venv/`、`ipam.db`、`backups/`、`*.log`。
-5. 左下角 **Summary** 填提交说明，例如 `feat: IPAM v1.0 初始交付`，点 **Commit to main**。
-6. 点右上角 **Publish repository**：
-   - 填仓库名（默认同本地名）；
-   - 取消勾选 *Keep this code private* 才是公开仓库；涉及内网地址、账号策略时**建议保持私有**；
-   - 点 **Publish Repository**，等待上传完成。
-7. 以后改了代码：在 Changes 里填 Summary → **Commit to main** → 右上角 **Push origin** 同步到 GitHub。
-
-如果 GitHub 上已经建好空仓库：先 **File → Clone Repository** 克隆到本地，把项目文件复制进去（不要复制 `.git`、`.venv`、`ipam.db`），再 Commit + Push。
-
-> 万一不小心把 `ipam.db` 提交上去了：先删除本地文件再提交一次，并**立刻修改所有账号密码**；Git 历史里仍留有旧文件，公开仓库需要进一步清理历史（超出本指南范围，建议直接新建仓库重新上传）。
-
----
-
-## 8. 目录结构
+## 7. 目录结构
 
 ```text
 IPAM/
