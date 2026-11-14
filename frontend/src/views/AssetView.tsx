@@ -244,10 +244,10 @@ export const CONFIG: Record<AssetKind, KindConfig> = {
 }
 
 const QUICK_NAV: { key: View; label: string; icon: string; stat?: 'devices' | 'racks' | 'links' | 'locations' }[] = [
-  { key: 'devices', label: '设备', icon: 'cpu', stat: 'devices' },
-  { key: 'racks', label: '机柜', icon: 'database', stat: 'racks' },
-  { key: 'links', label: '链路', icon: 'swap', stat: 'links' },
   { key: 'locations', label: '位置', icon: 'network', stat: 'locations' },
+  { key: 'racks', label: '机柜', icon: 'database', stat: 'racks' },
+  { key: 'devices', label: '设备', icon: 'cpu', stat: 'devices' },
+  { key: 'links', label: '链路', icon: 'swap', stat: 'links' },
   { key: 'device_roles', label: '角色', icon: 'tag' },
 ]
 
