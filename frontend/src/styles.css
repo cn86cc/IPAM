@@ -818,15 +818,11 @@ tbody tr:last-child td{border-bottom:none}
 .rack-device-u{color:var(--blue-800);font-size:10px;font-weight:600;white-space:nowrap;
   padding:1px 5px;border-radius:4px;background:var(--blue-50)}
 .rack-device-role{font-size:10px;color:var(--text-2);white-space:nowrap}
-/* 多 U 设备：整块跨连续 U 位，浅蓝底 + 1px 描边标明占用区间。
-   不使用左侧色条：它与「选中态」inset 3px 蓝条几乎一样、且 1U 设备没有，
-   靠 U14–U20 · 7U 标签与跨格整块已足够区分。 */
-.rack-slot.rack-slot-detail.multi-u{background:#EFF6FE;
-  box-shadow:inset 0 0 0 1px rgba(21,101,192,.18)}
-.rack-slot.rack-slot-detail.multi-u.warn{background:#FFF6E8;
-  box-shadow:inset 0 0 0 1px rgba(180,120,20,.18)}
-.rack-slot.rack-slot-detail.multi-u:hover{background:#E3F0FD}
-.rack-slot.rack-slot-detail.multi-u.drop-target{background:#DCEBFB}
+/* 多 U 设备：整块跨连续 U 位，但视觉样式与 1U 设备完全一致。
+   不再单独设置底色 / 描边 / 左侧色条 / hover / drop-target，
+   统一走 .rack-slot.used 及 .rack-slot-detail 的状态规则；
+   否则会出现 1U 没有、只有多 U 才有的整圈「外框」，且会盖掉选中态蓝条。
+   占用高度靠 U14–U20 · 7U 标签与跨格整块本身区分即可。 */
 .rack-slot.rack-slot-detail.multi-u .rack-device{align-items:center}
 /* U 位范围 / 高度联动的实时占用预览 */
 .u-range-preview{margin-top:7px;padding:6px 9px;border-radius:6px;font-size:11px;
