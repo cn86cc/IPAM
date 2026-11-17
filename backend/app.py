@@ -872,9 +872,10 @@ def asset_rack_detail(rack_id: str):
 
 @app.post("/api/assets/racks/{rack_id}/move")
 def asset_rack_move(rack_id: str, body: dict, request: Request):
-    """拖拽调整 U 位；目标被占用时在事务内与占用设备交换位置。"""
+    """拖拽 / 表单调整 U 位；目标被占用时按可用空间自动交换（支持多 U 设备）。"""
     return _run(assets.move_device, rack_id, str(body.get("device_id") or ""),
-                body.get("rack_u"), _actor(request)["username"])
+                body.get("rack_u"), _actor(request)["username"],
+                u_height=body.get("u_height"))
 
 
 # 位置二级页面：机柜横向平面图与顺序调整，路径前缀复用 locations 模块权限规则

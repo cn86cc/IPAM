@@ -50,7 +50,7 @@ FIELDS = {
     "locations": ["name", "kind", "parent_id", "address", "contact", "note"],
     "racks": ["name", "location_id", "units", "power_kw", "status", "note"],
     "devices": ["name", "vendor", "model", "role", "mgmt_ip", "location_id",
-                "rack_id", "rack_u", "status", "vrf", "owner", "note"],
+                "rack_id", "rack_u", "u_height", "status", "vrf", "owner", "note"],
     "links": ["name", "local_device_id", "local_port", "remote_device_id",
               "remote_port", "kind", "bandwidth_gbps", "vlan", "status", "note"],
 }
@@ -70,14 +70,40 @@ DEFAULTS = {
     "locations": {"kind": "room", "parent_id": "", "address": "", "contact": "", "note": ""},
     "racks": {"location_id": "", "units": 42, "power_kw": 6, "status": "active", "note": ""},
     "devices": {"vendor": "", "model": "", "role": "other", "mgmt_ip": "", "location_id": "",
-                "rack_id": "", "rack_u": "", "status": "online", "vrf": "default",
-                "owner": "", "note": ""},
+                "rack_id": "", "rack_u": "", "u_height": 1, "status": "online",
+                "vrf": "default", "owner": "", "note": ""},
     "links": {"name": "", "local_device_id": "", "local_port": "", "remote_device_id": "",
               "remote_port": "", "kind": "trunk", "bandwidth_gbps": 10, "vlan": "",
               "status": "up", "note": ""},
 }
-NUMBERS = {"units": int, "rack_u": int, "power_kw": float, "bandwidth_gbps": float}
+NUMBERS = {"units": int, "rack_u": int, "u_height": int,
+           "power_kw": float, "bandwidth_gbps": float}
 ID_RE = re.compile(r"^[A-Za-z0-9._-]{2,48}$")
+# U 位范围文本：38 / 38-40 / 40~38 都接受，取较小值为起始、较大值为结束。
+U_RANGE_RE = re.compile(r"^\s*(\d+)\s*[-~]\s*(\d+)\s*$")
+MAX_U_HEIGHT = 60  # 机柜容量上限，也是单次可占用的最大连续 U 数
+
+
+def parse_u_range(raw: object) -> tuple[int, int] | None:
+    """把 U 位文本解析为 (start, height)；单数字返回 None（交由常规数字解析）。
+
+    '38-40' / '40~38' → (38, 3)；'38' → None。范围优先于占用高度下拉值。
+    """
+    m = U_RANGE_RE.match(str(raw if raw is not None else ""))
+    if not m:
+        return None
+    a, b = int(m.group(1)), int(m.group(2))
+    return min(a, b), abs(b - a) + 1
+
+
+def u_interval(row) -> tuple[int, int] | None:
+    """设备占用的 U 位闭区间 [start, end]；未上架或历史脏数据返回 None。"""
+    start = row["rack_u"] if "rack_u" in row.keys() else row.get("rack_u")
+    if start is None:
+        return None
+    h = row["u_height"] if "u_height" in row.keys() else row.get("u_height")
+    h = max(1, int(h or 1))
+    return int(start), int(start) + h - 1
 
 # ---------------------------------------------------------------- 种子数据
 
@@ -320,14 +346,17 @@ def list_assets(conn: sqlite3.Connection, kind: str,
 
     for r in racks:
         occupants = [d for d in devices if d.get("rack_id") == r["id"]]
-        used = len(occupants)
+        # 多 U 设备按实际占用高度累加；台数与 U 数是两个不同指标。
+        used_u = sum(max(1, int(d.get("u_height") or 1)) for d in occupants
+                     if d.get("rack_u") is not None)
         r["location_name"] = loc_name.get(r["location_id"], "—")
-        r["device_count"] = used
-        r["used_u"] = used
-        r["free_u"] = max(0, r["units"] - used)
-        r["util"] = round(used / r["units"] * 100, 1) if r["units"] else 0.0
+        r["device_count"] = len(occupants)
+        r["used_u"] = used_u
+        r["free_u"] = max(0, r["units"] - used_u)
+        r["util"] = round(used_u / r["units"] * 100, 1) if r["units"] else 0.0
         r["occupants"] = [
             {"id": d["id"], "name": d["name"], "rack_u": d.get("rack_u"),
+             "u_height": max(1, int(d.get("u_height") or 1)),
              "status": d["status"]} for d in occupants
         ]
 
@@ -431,7 +460,9 @@ def rack_detail(conn: sqlite3.Connection, rack_id: str,
     devices.sort(key=lambda d: -(d.get("rack_u") or 0))
 
     units = rack["units"] or 42
-    used = len(devices)
+    # 多 U 设备：used 是实际占用 U 数（用于容量 / 利用率），device_count 是台数。
+    placed = [d for d in devices if d.get("rack_u") is not None]
+    used_u = sum(max(1, int(d.get("u_height") or 1)) for d in placed)
     # 角色下拉来自字典；同时把可见范围内已使用的角色一并返回，保证历史 / 停用值不丢失
     role_choices = sorted({str(d.get("role") or "").strip() for d in scoped_devices
                            if str(d.get("role") or "").strip()})
@@ -441,9 +472,10 @@ def rack_detail(conn: sqlite3.Connection, rack_id: str,
         "role_choices": role_choices,
         "stats": {
             "units": units,
-            "used": used,
-            "free": max(0, units - used),
-            "util": round(used / units * 100, 1) if units else 0.0,
+            "used": used_u,
+            "device_count": len(placed),
+            "free": max(0, units - used_u),
+            "util": round(used_u / units * 100, 1) if units else 0.0,
             "online": sum(1 for d in devices if d["status"] == "online"),
         },
         "options": {
@@ -484,17 +516,19 @@ def location_detail(conn: sqlite3.Connection, location_id: str,
         (location_id,))]
     for rack in racks:
         occupants = [d for d in visible if d.get("rack_id") == rack["id"]]
+        placed = [d for d in occupants if d.get("rack_u") is not None]
         units = rack["units"] or 42
-        used = len(occupants)
-        rack["used_u"] = used
-        rack["free_u"] = max(0, units - used)
-        rack["util"] = round(used / units * 100, 1) if units else 0.0
-        rack["device_count"] = used
+        used_u = sum(max(1, int(d.get("u_height") or 1)) for d in placed)
+        rack["used_u"] = used_u
+        rack["free_u"] = max(0, units - used_u)
+        rack["util"] = round(used_u / units * 100, 1) if units else 0.0
+        rack["device_count"] = len(placed)
         rack["online"] = sum(1 for d in occupants if d["status"] == "online")
         rack["occupants"] = [
             {"id": d["id"], "name": d["name"], "rack_u": d.get("rack_u"),
+             "u_height": max(1, int(d.get("u_height") or 1)),
              "status": d["status"]} for d in
-            sorted(occupants, key=lambda d: -(d.get("rack_u") or 0))
+            sorted(placed, key=lambda d: -(d.get("rack_u") or 0))
         ]
 
     rack_counts: dict[str, int] = {}
@@ -527,6 +561,8 @@ def location_detail(conn: sqlite3.Connection, location_id: str,
 
     units_total = sum(r["units"] or 0 for r in racks)
     used_u = sum(r["used_u"] for r in racks)
+    # 多 U 设备下「占用 U 数」与「在架台数」分离：平面图按 U 数着色，页脚按台数统计。
+    device_count = sum(r["device_count"] for r in racks)
     return {
         "location": location,
         "racks": racks,
@@ -536,9 +572,7 @@ def location_detail(conn: sqlite3.Connection, location_id: str,
             "units_total": units_total,
             "used_u": used_u,
             "util": round(used_u / units_total * 100, 1) if units_total else 0.0,
-            # 「在架设备」按本位置机柜的实际 U 位占用统计，与平面图 / 已占用 U 位一致；
-            # 设备的 location_id 允许与所属机柜位置不同（数据迁移或登记口径差异）。
-            "device_count": used_u,
+            "device_count": device_count,
             "max_units": max((r["units"] or 0 for r in racks), default=0),
             "min_units": min((r["units"] or 0 for r in racks), default=0),
         },
@@ -595,6 +629,14 @@ def reorder_racks(conn: sqlite3.Connection, location_id: str, order: object,
 
 def _clean(kind: str, payload: dict, existing: dict | None) -> dict:
     """白名单字段 + 未知字段拒绝 + 枚举/数字/外键/唯一性校验。"""
+    payload = dict(payload)
+    if kind == "devices":
+        # 「范围文本 + 高度下拉联动」：表单可直接提交 '38-40'，后端拆成
+        # 起始 U 位与连续占用高度；范围推导出的高度优先于下拉值，保证双向一致。
+        rng = parse_u_range(payload.get("rack_u"))
+        if rng:
+            payload["rack_u"] = rng[0]
+            payload["u_height"] = rng[1]
     unknown = set(payload) - set(FIELDS[kind])
     if unknown:
         raise ValueError("不支持的字段：" + "、".join(sorted(unknown)))
@@ -606,7 +648,8 @@ def _clean(kind: str, payload: dict, existing: dict | None) -> dict:
             raw = ""
         if key in NUMBERS:
             if raw == "" or raw is None:
-                out[key] = None if key == "rack_u" else 0
+                # rack_u 空表示未上架；u_height 空按 1U；其余数值字段空按 0
+                out[key] = None if key == "rack_u" else (1 if key == "u_height" else 0)
             else:
                 try:
                     out[key] = NUMBERS[key](raw)
@@ -702,6 +745,12 @@ def _validate(conn: sqlite3.Connection, kind: str, values: dict, item_id: str | 
             raise ValueError(f"所属位置 {values['location_id']} 不存在")
         values["rack_id"] = values["rack_id"] or None
         values["rack_u"] = values["rack_u"] or None
+        # 不能用 `or 1`：显式传 0 会被静默吞成 1U，应当明确拒绝
+        raw_h = values["u_height"]
+        height = int(1 if raw_h in (None, "") else raw_h)
+        if not 1 <= height <= MAX_U_HEIGHT:
+            raise ValueError(f"占用高度需在 1–{MAX_U_HEIGHT} U 之间")
+        values["u_height"] = height
         if values["rack_id"]:
             rack = conn.execute("SELECT units FROM asset_racks WHERE id=?",
                                 (values["rack_id"],)).fetchone()
@@ -709,14 +758,21 @@ def _validate(conn: sqlite3.Connection, kind: str, values: dict, item_id: str | 
                 raise ValueError(f"机柜 {values['rack_id']} 不存在")
             if values["rack_u"] is None:
                 raise ValueError("设备放入机柜时必须指定 U 位")
-            if not 1 <= values["rack_u"] <= rack["units"]:
-                raise ValueError(f"U 位需在 1–{rack['units']} 之间")
-            clash = conn.execute(
-                "SELECT id,name FROM asset_devices WHERE rack_id=? AND rack_u=? AND id<>?",
-                (values["rack_id"], values["rack_u"], item_id or ""),
-            ).fetchone()
-            if clash:
-                raise ValueError(f"U 位 {values['rack_u']} 已被 {clash['name']} 占用")
+            start, end = values["rack_u"], values["rack_u"] + height - 1
+            if start < 1 or end > rack["units"]:
+                raise ValueError(
+                    f"U 位范围 U{start}–U{end}（{height}U）超出机柜 1–{rack['units']} U")
+            # 区间重叠校验：同一机柜内任意两台设备的 [start, end] 不得相交。
+            # 拖拽移动走 move_device（可自动交换），这里只守新建 / 表单编辑的落位。
+            for other in conn.execute(
+                    "SELECT id,name,rack_u,u_height FROM asset_devices "
+                    "WHERE rack_id=? AND id<>? AND rack_u IS NOT NULL",
+                    (values["rack_id"], item_id or "")):
+                interval = u_interval(other)
+                if interval and not (end < interval[0] or start > interval[1]):
+                    raise ValueError(
+                        f"U 位 U{start}–U{end} 与设备 {other['name']}"
+                        f"（U{interval[0]}–U{interval[1]}）重叠")
         else:
             values["rack_u"] = None
         # 设备归属必须是已定义的 VRF 地址平面，避免改名 / 删除后出现孤儿引用
@@ -878,12 +934,33 @@ def delete_asset(conn: sqlite3.Connection, kind: str, item_id: str,
         raise
 
 
-def move_device(conn: sqlite3.Connection, rack_id: str, device_id: str,
-                rack_u: object, actor: str | None = None) -> dict:
-    """机柜正视图拖拽：把设备移到目标 U 位；目标已占用时两台设备互换位置。
+def _free_segments(units: int, occupied: list[tuple[int, int]]) -> list[tuple[int, int]]:
+    """[1, units] 内未被 occupied 覆盖的最大连续空闲段 [(start, end), ...]。"""
+    segs: list[tuple[int, int]] = []
+    cur = 1
+    for s, e in sorted(occupied):
+        if e < cur:
+            continue
+        if s > cur:
+            segs.append((cur, s - 1))
+        cur = max(cur, e + 1)
+    if cur <= units:
+        segs.append((cur, units))
+    return segs
 
-    整段在单个 BEGIN IMMEDIATE 事务内完成。asset_devices 上没有 (rack_id, rack_u)
-    唯一约束，逐条 UPDATE 不会产生中间态冲突；事务保证要么一起生效要么一起回滚。
+
+def move_device(conn: sqlite3.Connection, rack_id: str, device_id: str,
+                rack_u: object, actor: str | None = None,
+                u_height: object = None) -> dict:
+    """机柜拖拽 / 表单改位：把设备落到目标起始 U 位，占用 [start, start+h-1]。
+
+    保留原有的「自动交换」，并推广到多 U 设备：目标区间若与已有设备重叠，
+    把被挤占的设备重定位到机柜内的连续空位（优先落到本设备腾出的原区间），
+    不要求交换双方高度相同。只要机柜里还有足够的连续空间容纳所有被挤占设备，
+    就在一个事务里一起提交；空间不足则整体回滚并提示另选位置。
+
+    rack_u 可以是数字或 '38-40' 范围文本（范围推导的高度优先于 u_height）。
+    u_height 由设备表单在只改高度、不改起始位时传入。
     """
     conn.execute("BEGIN IMMEDIATE")
     try:
@@ -891,52 +968,116 @@ def move_device(conn: sqlite3.Connection, rack_id: str, device_id: str,
                             (rack_id,)).fetchone()
         if not rack:
             raise LookupError(f"机柜 {rack_id} 不存在")
-        dev = conn.execute(
-            "SELECT id,name,rack_id,rack_u,mgmt_ip FROM asset_devices WHERE id=?",
-            (device_id,),
-        ).fetchone()
-        if not dev:
-            raise LookupError(f"设备 {device_id} 不存在")
-        if dev["rack_id"] != rack_id:
-            raise ValueError(f"设备 {dev['name']} 不在机柜 {rack_id} 内，不能直接调整 U 位")
-        try:
-            target = int(rack_u)  # type: ignore[arg-type]
-        except (TypeError, ValueError):
-            raise ValueError("U 位必须是数字")
-        if not 1 <= target <= rack["units"]:
-            raise ValueError(f"U 位需在 1–{rack['units']} 之间")
-        origin = dev["rack_u"]
-        if origin == target:
-            conn.rollback()
-            return {"id": device_id, "rack_u": target, "action": "unchanged",
-                    "from_u": origin, "swapped_with": None}
-        if origin is None:
+        units = rack["units"]
+        rows = list(conn.execute(
+            "SELECT id,name,rack_id,rack_u,u_height,mgmt_ip FROM asset_devices "
+            "WHERE rack_id=?", (rack_id,)))
+        by_id = {r["id"]: r for r in rows}
+        dev = by_id.get(device_id)
+        if dev is None:
+            other = conn.execute("SELECT rack_id FROM asset_devices WHERE id=?",
+                                 (device_id,)).fetchone()
+            if other is None:
+                raise LookupError(f"设备 {device_id} 不存在")
+            raise ValueError(f"设备不在机柜 {rack_id} 内，不能直接调整 U 位")
+        if dev["rack_u"] is None:
             raise ValueError("设备尚未指定 U 位，请先在设备编辑面板补齐")
 
-        other = conn.execute(
-            "SELECT id,name FROM asset_devices WHERE rack_id=? AND rack_u=? AND id<>?",
-            (rack_id, target, device_id),
-        ).fetchone()
-        now = db.now()
-        if other:
-            conn.execute("UPDATE asset_devices SET rack_u=?,updated_at=? WHERE id=?",
-                         (origin, now, other["id"]))
-        conn.execute("UPDATE asset_devices SET rack_u=?,updated_at=? WHERE id=?",
-                     (target, now, device_id))
+        rng = parse_u_range(rack_u)
+        if rng:
+            target, height = rng
+        else:
+            try:
+                target = int(rack_u)  # type: ignore[arg-type]
+            except (TypeError, ValueError):
+                raise ValueError("U 位必须是数字，或 38-40 这样的连续范围")
+            if u_height is None or u_height == "":
+                height = max(1, int(dev["u_height"] or 1))
+            else:
+                try:
+                    height = int(u_height)
+                except (TypeError, ValueError):
+                    raise ValueError("占用高度必须是数字")
+        if not 1 <= height <= MAX_U_HEIGHT:
+            raise ValueError(f"占用高度需在 1–{MAX_U_HEIGHT} U 之间")
+        if target < 1 or target + height - 1 > units:
+            raise ValueError(
+                f"U 位范围 U{target}–U{target + height - 1} 超出机柜 1–{units} U")
 
-        action = "swap" if other else "move"
-        suffix = f"，与 {other['id']}（{other['name']}）交换" if other else ""
+        origin = int(dev["rack_u"])
+        old_height = max(1, int(dev["u_height"] or 1))
+        if origin == target and old_height == height:
+            conn.rollback()
+            return {"id": device_id, "rack_u": target, "u_height": height,
+                    "action": "unchanged", "from_u": origin,
+                    "swapped_with": None, "moved": []}
+
+        target_interval = (target, target + height - 1)
+
+        def overlaps(a: tuple[int, int], b: tuple[int, int]) -> bool:
+            return not (a[1] < b[0] or a[0] > b[1])
+
+        # 已上架的其它设备；本设备腾出的原区间不占用，可给对方做「交换」落点
+        others = [r for r in rows if r["id"] != device_id and u_interval(r) is not None]
+        blockers = [r for r in others if overlaps(u_interval(r), target_interval)]
+        blocker_ids = {r["id"] for r in blockers}
+        fixed = [r for r in others if r["id"] not in blocker_ids]
+
+        updates: list[tuple[str, int, int]] = [(device_id, target, height)]
+        moved: list[str] = []
+        if not blockers:
+            action = "move"
+        else:
+            # FFD：先安置占用高度大的设备，减少碎片；优先精确落回本设备腾出的
+            # 原起始 U（复现 1U↔1U 的直观互换），放不下时再按「含 origin 的段
+            # 优先 → 首次适配」找其它连续空位。
+            occupied = [target_interval] + [u_interval(r) for r in fixed]
+
+            def fits(start: int, h: int) -> bool:
+                if start < 1 or start + h - 1 > units:
+                    return False
+                return all(not overlaps((start, start + h - 1), iv) for iv in occupied)
+
+            for r in sorted(blockers,
+                            key=lambda x: -(u_interval(x)[1] - u_interval(x)[0] + 1)):
+                interval = u_interval(r)
+                h = interval[1] - interval[0] + 1
+                if fits(origin, h):
+                    new_start = origin
+                else:
+                    segs = _free_segments(units, occupied)
+                    segs.sort(key=lambda s: (0 if s[0] <= origin <= s[1] else 1, s[0]))
+                    pick = next((s for s in segs if s[1] - s[0] + 1 >= h), None)
+                    if pick is None:
+                        raise ValueError("目标区域空间不足，无法完成交换，请选择其它 U 位")
+                    new_start = pick[0]
+                updates.append((r["id"], new_start, h))
+                moved.append(r["id"])
+                occupied.append((new_start, new_start + h - 1))
+            action = "swap"
+
+        now = db.now()
+        for did, new_u, h in updates:
+            conn.execute(
+                "UPDATE asset_devices SET rack_u=?,u_height=?,updated_at=? WHERE id=?",
+                (new_u, h, now, did))
+
+        swapped_with = moved[0] if moved else None
+        suffix = ("，与 " + "、".join(by_id[x]["name"] for x in moved) + " 交换位置"
+                  if moved else "")
         db.audit(conn, "asset.rack.move", dev["mgmt_ip"] or None,
                  f"MOVE {LABELS['devices']} {device_id} · {dev['name']} "
-                 f"在机柜 {rack_id} 内 U{origin} → U{target}{suffix}"
+                 f"在机柜 {rack_id} 内 U{origin}({old_height}U) → "
+                 f"U{target}({height}U){suffix}"
                  + (f"（操作人 {actor}）" if actor else ""))
         extended.emit(conn, "asset.rack.move", device_id,
                       {"id": device_id, "rack_id": rack_id, "from_u": origin,
-                       "to_u": target, "action": action,
-                       "swapped_with": other["id"] if other else None, "actor": actor})
+                       "to_u": target, "u_height": height, "action": action,
+                       "swapped_with": swapped_with, "moved": moved, "actor": actor})
         conn.commit()
-        return {"id": device_id, "rack_u": target, "action": action,
-                "from_u": origin, "swapped_with": other["id"] if other else None}
+        return {"id": device_id, "rack_u": target, "u_height": height,
+                "action": action, "from_u": origin,
+                "swapped_with": swapped_with, "moved": moved}
     except Exception:
         conn.rollback()
         raise

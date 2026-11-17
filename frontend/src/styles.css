@@ -815,7 +815,23 @@ tbody tr:last-child td{border-bottom:none}
 .rack-device.dragging{opacity:.42}
 .rack-device-name{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:180px}
 .rack-device-meta{color:var(--text-3);font-size:10px;white-space:nowrap}
+.rack-device-u{color:var(--blue-800);font-size:10px;font-weight:600;white-space:nowrap;
+  padding:1px 5px;border-radius:4px;background:var(--blue-50)}
 .rack-device-role{font-size:10px;color:var(--text-2);white-space:nowrap}
+/* 多 U 设备：整块跨连续 U 位，左侧色条 + 描边标明占用区间 */
+.rack-slot.rack-slot-detail.multi-u{background:#EFF6FE;box-shadow:inset 4px 0 0 var(--blue),
+  inset 0 0 0 1px rgba(21,101,192,.18)}
+.rack-slot.rack-slot-detail.multi-u.warn{background:#FFF6E8;box-shadow:inset 4px 0 0 var(--amber),
+  inset 0 0 0 1px rgba(180,120,20,.18)}
+.rack-slot.rack-slot-detail.multi-u:hover{background:#E3F0FD}
+.rack-slot.rack-slot-detail.multi-u.drop-target{background:#DCEBFB}
+.rack-slot.rack-slot-detail.multi-u .rack-device{align-items:center}
+/* U 位范围 / 高度联动的实时占用预览 */
+.u-range-preview{margin-top:7px;padding:6px 9px;border-radius:6px;font-size:11px;
+  line-height:1.5;border:1px solid var(--border);background:var(--bg);color:var(--text-2)}
+.u-range-preview.ok{background:#F5FBF8;border-color:#9FE1CB;color:var(--teal-800)}
+.u-range-preview.bad{background:var(--red-50);border-color:#F0C9C6;color:var(--red)}
+.u-range-preview.muted{color:var(--text-3)}
 .rack-device .tag{flex:none}
 .rack-drag-handle{margin-left:auto;color:var(--blue);font-size:13px;letter-spacing:-2px;flex:none;opacity:.65}
 .rack-slot.warn .rack-device{color:var(--amber-800)}

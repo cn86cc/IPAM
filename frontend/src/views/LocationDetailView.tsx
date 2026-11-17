@@ -67,12 +67,17 @@ export default function LocationDetailView({
   const stats = data?.stats
   const order = useMemo(() => racks.map(r => r.id), [racks])
 
-  /** 每台机柜的 U 位占用表，按 U 降序生成色块。 */
+  /** 每台机柜的 U 位占用表，按 U 降序生成色块；多 U 设备铺满整段连续区间。 */
   const slotsOf = (rack: AssetRow) => {
     const units = rack.units || 42
-    const byU = new Map<number, { id: string; name: string; status: string }>()
+    const byU = new Map<number, { id: string; name: string; status: string
+      start: number; end: number }>()
     for (const o of rack.occupants ?? []) {
-      if (o.rack_u) byU.set(Number(o.rack_u), o)
+      const s = Number(o.rack_u)
+      if (!Number.isInteger(s) || s < 1) continue
+      const h = Math.max(1, Number(o.u_height) || 1)
+      const item = { id: o.id, name: o.name, status: o.status, start: s, end: s + h - 1 }
+      for (let u = s; u <= item.end; u++) byU.set(u, item)
     }
     return Array.from({ length: units }, (_, i) => {
       const u = units - i
@@ -203,7 +208,7 @@ export default function LocationDetailView({
       <div className="stat-row">
         <MiniStat label="下属机柜" value={stats?.rack_count ?? 0} foot="台 · 同一位置" tone="blue" />
         <MiniStat label="机柜总容量" value={stats?.units_total ?? 0} foot={`最高 ${stats?.max_units ?? 0} U`} />
-        <MiniStat label="已占用 U 位" value={stats?.used_u ?? 0} foot="在架设备数" tone="teal" />
+        <MiniStat label="已占用 U 位" value={stats?.used_u ?? 0} foot="按实际占用 U 数累加" tone="teal" />
         <MiniStat label="U 位利用率" value={stats?.util ?? 0} foot="已用 / 总容量（%）" tone="amber" />
       </div>
 
@@ -317,7 +322,7 @@ export default function LocationDetailView({
                             className={`loc-u${s.occ ? ' used' : ''}${
                               s.occ && s.occ.status !== 'online' ? ' warn' : ''}`}
                             title={s.occ
-                              ? `U${s.u} · ${s.occ.name}（${s.occ.id}）· ${ASSET_STATUS_LABEL[s.occ.status] ?? s.occ.status}`
+                              ? `U${s.u} · ${s.occ.name}（${s.occ.id}）· 占用 ${s.occ.end > s.occ.start ? `U${s.occ.start}–U${s.occ.end}` : `U${s.occ.start}`} · ${ASSET_STATUS_LABEL[s.occ.status] ?? s.occ.status}`
                               : `U${s.u} 空闲`}>
                             <span className="loc-u-num">U{s.u}</span>
                           </div>

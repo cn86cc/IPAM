@@ -237,9 +237,10 @@ export const api = {
     request<AssetWriteResult>(`/assets/${kind}/${encodeURIComponent(id)}`, { method: 'DELETE' }),
   assetRackDetail: (id: string) =>
     get<RackDetailData>(`/assets/racks/${encodeURIComponent(id)}/detail`),
-  moveRackDevice: (rackId: string, deviceId: string, rackU: number) =>
+  moveRackDevice: (rackId: string, deviceId: string, rackU: number, uHeight?: number) =>
     post<RackMoveResult>(`/assets/racks/${encodeURIComponent(rackId)}/move`,
-      { device_id: deviceId, rack_u: rackU }),
+      { device_id: deviceId, rack_u: rackU,
+        ...(uHeight === undefined ? {} : { u_height: uHeight }) }),
   assetLocationDetail: (id: string) =>
     get<LocationDetailData>(`/assets/locations/${encodeURIComponent(id)}/detail`),
   reorderLocationRacks: (id: string, order: string[]) =>

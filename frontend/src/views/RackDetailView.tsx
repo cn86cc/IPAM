@@ -7,7 +7,10 @@ import {
   type AssetData, type AssetKind, type AssetPayload, type AssetRow, type View,
 } from '../types'
 import { RACK_DETAIL_SCALE, RACK_MM, rackHeightMm, useLoad } from './shared'
-import { CONFIG, initialForm, optionChoices } from './AssetView'
+import {
+  CONFIG, URangePreview, initialForm, linkUField, optionChoices, uDisplay,
+  uHeightExtraOption, uSpanOf,
+} from './AssetView'
 
 type RackMode = 'full' | 'occupied'
 
@@ -69,9 +72,18 @@ export default function RackDetailView({
   const stats = data?.stats
   const units = stats?.units ?? rack?.units ?? 42
 
-  const byU = useMemo(() => {
-    const map = new Map<number, AssetRow>()
-    devices.forEach(d => { if (d.rack_u) map.set(Number(d.rack_u), d) })
+  /** 多 U 设备按连续区间铺到每一个 U 位；top = 该设备在「U 降序」网格中的首行，
+   *  用 grid-row: span h 让设备块跨格显示，被覆盖的其余行不再单独生成子节点。 */
+  const occupancy = useMemo(() => {
+    const map = new Map<number, { row: AssetRow; top: boolean; height: number }>()
+    devices.forEach(d => {
+      const s = Number(d.rack_u)
+      if (!Number.isInteger(s) || s < 1) return
+      const h = Math.max(1, Number(d.u_height) || 1)
+      for (let u = s; u <= s + h - 1; u++) {
+        map.set(u, { row: d, top: u === s + h - 1, height: h })
+      }
+    })
     return map
   }, [devices])
 
@@ -106,8 +118,8 @@ export default function RackDetailView({
 
   const slots = useMemo(() => {
     const all = Array.from({ length: units }, (_, i) => units - i)
-    return mode === 'full' ? all : all.filter(u => byU.has(u))
-  }, [units, mode, byU])
+    return mode === 'full' ? all : all.filter(u => occupancy.has(u))
+  }, [units, mode, occupancy])
 
   function clearPanel() {
     setPanel({ kind: 'none' })
@@ -155,7 +167,8 @@ export default function RackDetailView({
     try {
       const res = await api.moveRackDevice(rackId, deviceId, target)
       if (res.action === 'swap') {
-        notify(`已移至 U${target}，并与 ${res.swapped_with} 交换位置`)
+        const others = res.moved?.length ? `与 ${res.moved.join('、')} ` : ''
+        notify(`已移至 U${target}，${others}按可用空间自动交换位置`)
       } else if (res.action === 'move') {
         notify(`已移至 U${target}`)
       } else {
@@ -227,21 +240,26 @@ export default function RackDetailView({
       setFormError('设备编号必填，仅支持字母、数字、. _ -，长度 2–48')
       return
     }
-    const targetU = Number(form.rack_u || 0)
-    if (!Number.isInteger(targetU) || targetU < 1 || targetU > units) {
-      setFormError(`U 位需在 1–${units} 之间`)
+    const span = uSpanOf(form)
+    if (span.error) { setFormError(span.error); return }
+    if (span.start === null) { setFormError('设备放入机柜必须指定 U 位'); return }
+    if (span.end && units && span.end > units) {
+      setFormError(`U 位范围 ${span.label} 超出机柜 1–${units} U`)
       return
     }
     setBusy(true)
     setFormError('')
     try {
-      // 先按旧编号完成 U 位移动 / 交换，再提交字段与可能变化的新编号，
+      // 先按旧编号完成 U 位移动 / 自动交换（含高度变化），再提交字段与可能变化的新编号，
       // 避免改名后仍拿旧编号去调用移动接口。
-      if (targetU !== Number(selected.rack_u || 0)) {
-        await api.moveRackDevice(rackId, selected.id, targetU)
+      const oldH = Math.max(1, Number(selected.u_height) || 1)
+      if (span.start !== Number(selected.rack_u || 0) || span.height !== oldH) {
+        await api.moveRackDevice(rackId, selected.id, span.start, span.height)
       }
       const rest: AssetPayload = { id, ...form, rack_id: rackId }
+      // 落位（起始 U + 高度）已由移动接口写入；这里不再重复提交，避免区间重叠误判。
       delete rest.rack_u
+      delete rest.u_height
       const res = await api.updateAsset('devices', selected.id, rest)
       const renamed = res.id !== selected.id
       if (renamed) {
@@ -268,9 +286,11 @@ export default function RackDetailView({
       setFormError('设备编号必填，仅支持字母、数字、. _ -，长度 2–48')
       return
     }
-    const targetU = Number(form.rack_u || creating)
-    if (!Number.isInteger(targetU) || targetU < 1 || targetU > units) {
-      setFormError(`U 位需在 1–${units} 之间`)
+    const span = uSpanOf(form)
+    if (span.error) { setFormError(span.error); return }
+    if (span.start === null) { setFormError('请指定 U 位'); return }
+    if (span.end && units && span.end > units) {
+      setFormError(`U 位范围 ${span.label} 超出机柜 1–${units} U`)
       return
     }
     setBusy(true)
@@ -280,10 +300,10 @@ export default function RackDetailView({
         id,
         ...form,
         rack_id: rackId,
-        rack_u: targetU,
+        rack_u: form.rack_u,
         location_id: form.location_id || text(rack?.location_id),
       })
-      notify(`已在 U${targetU} 新增设备 ${id}`)
+      notify(`已在 ${span.label} 新增设备 ${id}`)
       clearPanel()
       reload()
       onChanged()
@@ -302,14 +322,15 @@ export default function RackDetailView({
       f.source === 'roles' ? text(form[f.key]) : '')
     const wide = f.full || f.type === 'textarea'
     const locked = !isAdmin || f.key === 'rack_id'
+    const extraHeight = f.key === 'u_height' ? uHeightExtraOption(form.u_height) : null
     const help = f.key === 'rack_id'
       ? (ctx === 'create'
           ? '新设备将直接上架到当前机柜；跨机柜请到「设备」清单编辑。'
           : '跨机柜迁移请到「设备」清单编辑。')
       : f.key === 'rack_u'
         ? (ctx === 'create'
-            ? `已按双击的 U 位自动填入，可改为 1–${units} 内的空闲 U 位。`
-            : `修改后保存即调整位置；若目标 U 位已被占用，将与该设备交换。范围 1–${units}。`)
+            ? `已按双击的 U 位自动填入，可改为 38-40 这样的连续范围；机柜共 1–${units} U。`
+            : `修改后保存即调整位置；目标区间与已有设备重叠时按可用空间自动交换。机柜共 1–${units} U。`)
         : f.help
     return (
       <div className={`field${wide ? ' full' : ''}`} key={f.key}>
@@ -321,8 +342,11 @@ export default function RackDetailView({
         ) : f.type === 'select' ? (
           <select id={`rack-dev-${f.key}`} value={text(form[f.key])}
             disabled={locked}
-            onChange={e => setForm(p => ({ ...p, [f.key]: e.target.value }))}>
+            onChange={e => setForm(p => f.key === 'u_height'
+              ? linkUField(p, 'u_height', e.target.value)
+              : ({ ...p, [f.key]: e.target.value }))}>
             <option value="">— 请选择 —</option>
+            {extraHeight && <option value={extraHeight.value}>{extraHeight.label}</option>}
             {choices.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
           </select>
         ) : f.type === 'textarea' ? (
@@ -330,15 +354,23 @@ export default function RackDetailView({
             disabled={locked}
             onChange={e => setForm(p => ({ ...p, [f.key]: e.target.value }))}
             placeholder={f.placeholder} />
+        ) : f.type === 'urange' ? (
+          <input id={`rack-dev-${f.key}`} type="text"
+            value={text(form[f.key])}
+            disabled={locked}
+            onChange={e => setForm(p => linkUField(p, 'rack_u', e.target.value))}
+            placeholder={f.placeholder} />
         ) : (
           <input id={`rack-dev-${f.key}`}
             type={f.type === 'number' ? 'number' : 'text'}
-            min={f.key === 'rack_u' ? 1 : undefined}
-            max={f.key === 'rack_u' ? units : undefined}
             value={text(form[f.key])}
             disabled={locked}
             onChange={e => setForm(p => ({ ...p, [f.key]: e.target.value }))}
             placeholder={f.placeholder} />
+        )}
+        {f.type === 'urange' && (
+          <URangePreview form={form} units={units} rows={devices}
+            excludeId={selected?.id} rackId={rackId} />
         )}
         {help && <div className="help">{help}</div>}
         {f.key === 'role' && can('device_roles') && (
@@ -392,7 +424,7 @@ export default function RackDetailView({
 
       <div className="stat-row">
         <MiniStat label="机柜容量" value={stats?.units ?? 0} foot="总 U 位数" tone="blue" />
-        <MiniStat label="已占用 U 位" value={stats?.used ?? 0} foot="在架设备数" tone="teal" />
+        <MiniStat label="已占用 U 位" value={stats?.used ?? 0} foot="按实际占用 U 数" tone="teal" />
         <MiniStat label="空闲 U 位" value={stats?.free ?? 0} foot="可继续上架" tone="amber" />
         <MiniStat label="U 位利用率" value={stats?.util ?? 0} foot="已用 / 总容量（%）" />
       </div>
@@ -445,17 +477,23 @@ export default function RackDetailView({
                       style={{ width: RACK_DETAIL_SCALE.mountPx,
                         gridTemplateRows: `repeat(${slots.length}, ${RACK_DETAIL_SCALE.uPx}px)` }}>
                       {slots.map(u => {
-                        const occ = byU.get(u)
+                        const cell = occupancy.get(u)
+                        // 被多 U 设备覆盖的非首行由 grid-row: span 的整块占住，不再生成子节点
+                        if (cell && !cell.top) return null
+                        const occ = cell?.row ?? null
+                        const spanH = cell?.height ?? 1
                         const isFocused = !!focusedId && occ?.id === focusedId
                         const isCreateTarget = creating === u
                         return (
                           <div key={u}
                             className={`rack-slot rack-slot-detail${occ ? ' used' : ''}${
+                              spanH > 1 ? ' multi-u' : ''}${
                               occ && occ.status !== 'online' ? ' warn' : ''}${
                               dropU === u ? ' drop-target' : ''}${
                               isFocused ? ' selected' : ''}${
                               isCreateTarget ? ' create-target' : ''}`}
                             id={`rack-u-${u}`}
+                            style={spanH > 1 ? { gridRow: `span ${spanH}` } : undefined}
                             onDragOver={e => {
                               if (!isAdmin || !dragId) return
                               e.preventDefault()
@@ -489,9 +527,10 @@ export default function RackDetailView({
                                   setDropU(null)
                                   clearPanel()
                                 }}
-                                title={`${occ.name} · ${ASSET_ROLE_LABEL[occ.role || ''] ?? occ.role} · 拖动调整 U 位 / 双击编辑`}>
+                                title={`${occ.name} · ${uDisplay(occ)} · ${ASSET_ROLE_LABEL[occ.role || ''] ?? occ.role} · 拖动调整 U 位 / 双击编辑`}>
                                 <span className="rack-device-name">{occ.name}</span>
                                 <span className="rack-device-meta mono">{occ.id}</span>
+                                <span className="rack-device-u mono">{uDisplay(occ)}{spanH > 1 ? ` · ${spanH}U` : ''}</span>
                                 <span className="rack-device-role">
                                   {ASSET_ROLE_LABEL[occ.role || ''] ?? occ.role ?? '—'}
                                 </span>
@@ -531,7 +570,7 @@ export default function RackDetailView({
             )}
           <div className="rack-elev-foot">
             <span className="muted">
-              在线设备 {stats?.online ?? 0} 台 · 共 {stats?.used ?? 0} 台在架
+              在线设备 {stats?.online ?? 0} 台 · 共 {stats?.device_count ?? 0} 台在架 · 占用 {stats?.used ?? 0} U
             </span>
             <button className="btn sm" onClick={reload}>
               <Icon name="refresh" size={13} />刷新
@@ -545,7 +584,7 @@ export default function RackDetailView({
               : editing ? `编辑设备 · ${selected?.name}`
                 : selected ? `设备详情 · ${selected.name}` : '设备详情'}
             hint={creating !== null ? `目标机柜 ${rack?.name ?? rackId}`
-              : selected ? `编号 ${selected.id} · 当前 U${selected.rack_u}`
+              : selected ? `编号 ${selected.id} · 当前 ${uDisplay(selected)}`
                 : '单击查看 · 双击编辑 / 新增'}
             extra={(editing || creating !== null) && isAdmin ? (
               <span className="rack-edit-head">
@@ -625,7 +664,7 @@ export default function RackDetailView({
                   <span><b className="mono">{selected.id}</b></span>
                   <Tag text={ASSET_STATUS_LABEL[selected.status || ''] ?? selected.status ?? '—'}
                     tone={toneOf(selected.status)} />
-                  <span>U{selected.rack_u}</span>
+                  <span>{uDisplay(selected)}</span>
                 </div>
                 <div className="rack-info-list">
                   <div><span>设备名称</span><b>{selected.name}</b></div>
@@ -656,7 +695,7 @@ export default function RackDetailView({
               <div><span>机柜编号</span><b className="mono">{rackId}</b></div>
               <div><span>所属位置</span><b>{rack?.location_name ?? '—'}</b></div>
               <div><span>容量 / 供电</span><b className="mono">{units} U / {rack?.power_kw ?? '—'} kW</b></div>
-              <div><span>在架设备</span><b className="mono">{stats?.used ?? 0} 台</b></div>
+              <div><span>在架设备</span><b className="mono">{stats?.device_count ?? 0} 台 / {stats?.used ?? 0} U</b></div>
               <div><span>运行状态</span><b>{ASSET_STATUS_LABEL[rack?.status || ''] ?? rack?.status ?? '—'}</b></div>
               {rack?.note && <div><span>备注</span><b>{rack.note}</b></div>}
             </div>

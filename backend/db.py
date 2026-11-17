@@ -265,6 +265,9 @@ CREATE TABLE IF NOT EXISTS asset_devices (
   location_id TEXT,
   rack_id TEXT,
   rack_u INTEGER,
+  -- rack_u 是设备占用的「起始 U 位」，u_height 是连续占用高度（U 数）。
+  -- 二者构成闭区间 [rack_u, rack_u + u_height - 1]；旧库一律补默认 1U。
+  u_height INTEGER NOT NULL DEFAULT 1,
   status TEXT NOT NULL DEFAULT 'online',
   vrf TEXT NOT NULL DEFAULT 'default',
   owner TEXT NOT NULL DEFAULT '',
@@ -488,6 +491,8 @@ MIGRATIONS = [
     ("prefixes", "updated_at", "TEXT"),
     # 老库补列：位置平面图机柜横向顺序，默认 0 时按编号排序
     ("asset_racks", "layout_order", "INTEGER NOT NULL DEFAULT 0"),
+    # 多 U 设备：存量设备补默认 1U，不改动任何 rack_u 起始位
+    ("asset_devices", "u_height", "INTEGER NOT NULL DEFAULT 1"),
     # 路线 2：所有地址相关记录都要带上所属地址平面
     ("audit_logs", "vrf", "TEXT NOT NULL DEFAULT 'default'"),
     ("utilization_snapshots", "vrf", "TEXT NOT NULL DEFAULT 'default'"),

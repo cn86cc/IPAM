@@ -9,7 +9,7 @@ import {
 } from '../types'
 import { csvDownload, useLoad, type ViewProps } from './shared'
 
-type FieldType = 'text' | 'number' | 'select' | 'textarea'
+type FieldType = 'text' | 'number' | 'select' | 'textarea' | 'urange'
 
 type Choice = { value: string; label: string }
 
@@ -79,6 +79,136 @@ const statusTag = (row: AssetRow) => (
   <Tag text={statusLabel(row)} tone={toneOf(row.status)} />
 )
 
+/* ---------------- 多 U 设备：范围文本 + 高度下拉联动 ---------------- */
+
+/** 与后端 assets.MAX_U_HEIGHT 保持一致：单个设备最多连续占用 60U。 */
+export const MAX_U_HEIGHT = 60
+
+/** '38' → null；'38-40' / '40~38' → { start:38, height:3 }。 */
+export function parseURange(raw: unknown): { start: number; height: number } | null {
+  const m = /^(\d+)\s*[-~]\s*(\d+)$/.exec(text(raw).trim())
+  if (!m) return null
+  const a = Number(m[1]), b = Number(m[2])
+  return { start: Math.min(a, b), height: Math.abs(b - a) + 1 }
+}
+
+/** 高度下拉常规只给 1–12U；范围文本推导出更大高度时补一个展示项，
+ * 否则受控 select 的 value 没有匹配 option，会显示成空白。 */
+export function uHeightExtraOption(current: unknown): Choice | null {
+  const h = Math.max(1, Math.min(MAX_U_HEIGHT, Number(text(current)) || 1))
+  return h > 12 ? { value: String(h), label: `${h} U（范围输入）` } : null
+}
+
+/** 设备行的 U 位展示文案：1U 显示 U38，多 U 显示 U38–U40。 */
+export function uDisplay(row: AssetRow): string {
+  const s = Number(row.rack_u)
+  if (!Number.isInteger(s) || s < 1) return '—'
+  const h = Math.max(1, Number(row.u_height) || 1)
+  return h > 1 ? `U${s}–U${s + h - 1}` : `U${s}`
+}
+
+/** 从表单推导占用区间：范围文本优先，其次「单数字 + 高度下拉」。 */
+export function uSpanOf(form: AssetPayload): {
+  start: number | null; height: number; end: number | null
+  label: string; error: string
+} {
+  const height = Math.max(1, Math.min(MAX_U_HEIGHT, Number(form.u_height) || 1))
+  const raw = text(form.rack_u).trim()
+  const range = parseURange(raw)
+  let start: number | null = null
+  if (range) start = range.start
+  else if (/^\d+$/.test(raw)) start = Number(raw)
+  else if (raw) {
+    return { start: null, height, end: null, label: '—',
+      error: 'U 位需填 38 或 38-40 这样的数字 / 连续范围' }
+  }
+  const h = range ? range.height : height
+  if (h > MAX_U_HEIGHT) {
+    return { start, height: h, end: null, label: '—',
+      error: `占用高度需在 1–${MAX_U_HEIGHT} U 之间` }
+  }
+  if (start !== null && start < 1) {
+    return { start, height: h, end: null, label: '—',
+      error: 'U 位需从 1 开始' }
+  }
+  const end = start === null ? null : start + h - 1
+  return { start, height: h, end,
+    label: start === null ? '未上架' : (h > 1 ? `U${start}–U${end}` : `U${start}`),
+    error: '' }
+}
+
+/** U 位文本与高度下拉联动。
+ *
+ * 关键约束：rack_u 是受控输入，**输入过程中的每一个中间态都必须原样保留**。
+ * 早期版本在每个 onChange 里就把 '38-4' / '42-4' 归一成 '4-38' / '4-42'，
+ * 受控 input 的 value 被改写后光标与后续字符串位，用户逐字符输入
+ * '38-40' 会得到 '4-380'、输入 '42-44' 会得到 '4-424'，范围根本没法手动填。
+ * 因此这里只同步「高度下拉」用于展示；范围文本本身始终以用户输入为准
+ * （uSpanOf 范围优先，文本即最终区间）。只有用户主动操作高度下拉时，
+ * 才反向把文本展开成规范范围。 */
+export function linkUField(form: AssetPayload, key: 'rack_u' | 'u_height',
+  value: string): AssetPayload {
+  if (key === 'rack_u') {
+    const r = parseURange(value)
+    return { ...form, rack_u: value,
+      u_height: r ? Math.max(1, Math.min(MAX_U_HEIGHT, r.height)) : 1 }
+  }
+  const h = Math.max(1, Math.min(MAX_U_HEIGHT, Number(value) || 1))
+  const next: AssetPayload = { ...form, u_height: h }
+  const r = parseURange(form.rack_u)
+  if (r) next.rack_u = `${r.start}-${r.start + h - 1}`
+  else if (/^\d+$/.test(text(form.rack_u).trim())) {
+    const s = Number(text(form.rack_u).trim())
+    next.rack_u = h > 1 ? `${s}-${s + h - 1}` : String(s)
+  }
+  return next
+}
+
+/** 同机柜内的区间重叠检查，用于表单实时提示（不含自身）。 */
+export function uClash(form: AssetPayload, rows: AssetRow[], excludeId?: string,
+  rackId?: string): string {
+  const s = uSpanOf(form)
+  if (s.error || s.start === null || s.end === null) return ''
+  for (const r of rows) {
+    if (r.id === excludeId) continue
+    if (rackId && r.rack_id !== rackId) continue
+    const rs = Number(r.rack_u)
+    if (!Number.isInteger(rs) || rs < 1) continue
+    const rh = Math.max(1, Number(r.u_height) || 1)
+    const re = rs + rh - 1
+    if (!(s.end < rs || s.start > re)) {
+      return `与设备 ${r.name || r.id}（${rh > 1 ? `U${rs}–U${re}` : `U${rs}`}）重叠`
+    }
+  }
+  return ''
+}
+
+/** 表单 U 位区域下方的实时占用预览 / 冲突提示。 */
+export function URangePreview({ form, units, rows, excludeId, rackId }: {
+  form: AssetPayload; units?: number; rows?: AssetRow[]
+  excludeId?: string; rackId?: string
+}) {
+  const s = uSpanOf(form)
+  // 三个分支统一 id，便于自动化与一致性断言；错误态此前漏了 id，导致
+  // 「格式错误 / 高度超限」提示无法被定位。
+  if (s.error) return <div className="u-range-preview bad" id="asset-u-preview">{s.error}</div>
+  if (s.start === null) {
+    return <div className="u-range-preview muted" id="asset-u-preview">未上架 · 不占用 U 位</div>
+  }
+  const bad = (units && s.end && s.end > units)
+    ? `超出机柜容量 1–${units} U`
+    : uClash(form, rows ?? [], excludeId, rackId)
+  return (
+    <div className={`u-range-preview ${bad ? 'bad' : 'ok'}`} id="asset-u-preview">
+      {bad ? `⚠ ${bad}` : `✓ 占用 ${s.label} · ${s.height}U，空间可用`}
+    </div>
+  )
+}
+
+const U_HEIGHT_CHOICES: Choice[] = Array.from({ length: 12 }, (_, i) => ({
+  value: String(i + 1), label: `${i + 1} U`,
+}))
+
 export const CONFIG: Record<AssetKind, KindConfig> = {
   devices: {
     idHint: '设备编号', idExample: 'DEV-0013',
@@ -103,7 +233,10 @@ export const CONFIG: Record<AssetKind, KindConfig> = {
         help: '新建设备默认归属顶栏当前地址平面，不能跨平面登记；如需在其它平面新增设备，请先切换顶栏地址平面。' },
       { key: 'location_id', label: '所属位置', type: 'select', source: 'locations' },
       { key: 'rack_id', label: '所属机柜', type: 'select', source: 'racks' },
-      { key: 'rack_u', label: '机柜 U 位', type: 'number', placeholder: '1–60' },
+      { key: 'rack_u', label: '机柜 U 位', type: 'urange', placeholder: '例如 38 或 38-40',
+        help: '可填单个 U 位或连续范围；范围会自动同步下方「占用高度」，也可用高度下拉反向展开范围。' },
+      { key: 'u_height', label: '占用高度', type: 'select', choices: U_HEIGHT_CHOICES,
+        defaultValue: 1, help: '多 U 设备按连续区间占用，机柜正视图会跨格显示；最多 60U，可直接填范围突破 12U 下拉。' },
       { key: 'owner', label: '负责人 / 团队', placeholder: '例如 网络组 · 赵强' },
       { key: 'note', label: '备注', type: 'textarea', full: true },
     ],
@@ -124,9 +257,9 @@ export const CONFIG: Record<AssetKind, KindConfig> = {
       { key: 'location_name', label: '位置', render: r => text(r.location_name) || '—', text: r => r.location_name ?? '' },
       { key: 'rack', label: '机柜 / U 位',
         render: r => r.rack_name && r.rack_name !== '—'
-          ? <span>{r.rack_name} <b className="mono">U{r.rack_u}</b></span>
+          ? <span>{r.rack_name} <b className="mono">{uDisplay(r)}</b></span>
           : <span className="muted">未上架</span>,
-        text: r => r.rack_name && r.rack_name !== '—' ? `${r.rack_name} U${r.rack_u}` : '' },
+        text: r => r.rack_name && r.rack_name !== '—' ? `${r.rack_name} ${uDisplay(r)}` : '' },
       { key: 'status', label: '状态', render: statusTag, text: r => ASSET_STATUS_LABEL[r.status || ''] ?? r.status ?? '' },
       { key: 'vrf', label: '所属平面', render: r => mono(r.vrf), text: r => r.vrf ?? '' },
     ],
@@ -136,7 +269,7 @@ export const CONFIG: Record<AssetKind, KindConfig> = {
     stats: [
       { key: 'total', label: '机柜总数', foot: '含规划中机柜', tone: 'blue' },
       { key: 'active', label: '在用机柜', foot: '状态为在用', tone: 'teal' },
-      { key: 'used_u', label: '已占用 U 位', foot: '每台设备按 1U 计', tone: 'amber' },
+      { key: 'used_u', label: '已占用 U 位', foot: '按设备实际占用 U 数累加', tone: 'amber' },
       { key: 'util', label: '整体 U 位利用率', foot: '已用 / 总容量' },
     ],
     filter: { key: 'status', label: '机柜状态', choices: CHOICES.rackStatus },
@@ -263,6 +396,14 @@ export function initialForm(kind: AssetKind, row?: AssetRow): AssetPayload {
   if (!row && kind === 'devices') {
     const plane = getApiVrf()
     form.vrf = plane === 'all' ? 'default' : plane
+  }
+  // 编辑多 U 设备时把 (起始 U, 高度) 还原成「38-40」范围文本，
+  // 与表单的范围输入 / 高度下拉联动保持一致。
+  if (row && kind === 'devices') {
+    const h = Math.max(1, Number(row.u_height) || 1)
+    form.u_height = h
+    const s = Number(row.rack_u)
+    if (Number.isInteger(s) && s > 0 && h > 1) form.rack_u = `${s}-${s + h - 1}`
   }
   return form
 }
@@ -688,18 +829,26 @@ export default function AssetView({ kind, notify, onChanged, refreshKey, onNavig
               const choices = optionChoices(asset, f,
                 f.source === 'roles' ? text(form[f.key]) : '')
               const wide = f.full || f.type === 'textarea'
+              const extraHeight = f.key === 'u_height' ? uHeightExtraOption(form.u_height) : null
               return (
                 <div className={`field${wide ? ' full' : ''}`} key={f.key}>
                   <label>{f.label}</label>
                   {f.type === 'select' ? (
                     <select id={`asset-f-${f.key}`} value={text(form[f.key])}
-                      onChange={e => setForm(p => ({ ...p, [f.key]: e.target.value }))}>
+                      onChange={e => setForm(p => f.key === 'u_height'
+                        ? linkUField(p, 'u_height', e.target.value)
+                        : ({ ...p, [f.key]: e.target.value }))}>
                       <option value="">— 请选择 —</option>
+                      {extraHeight && <option value={extraHeight.value}>{extraHeight.label}</option>}
                       {choices.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
                     </select>
                   ) : f.type === 'textarea' ? (
                     <textarea id={`asset-f-${f.key}`} value={text(form[f.key])}
                       onChange={e => setForm(p => ({ ...p, [f.key]: e.target.value }))}
+                      placeholder={f.placeholder} />
+                  ) : f.type === 'urange' ? (
+                    <input id={`asset-f-${f.key}`} type="text" value={text(form[f.key])}
+                      onChange={e => setForm(p => linkUField(p, 'rack_u', e.target.value))}
                       placeholder={f.placeholder} />
                   ) : (
                     <input id={`asset-f-${f.key}`} type={f.type === 'number' ? 'number' : 'text'}
@@ -707,6 +856,12 @@ export default function AssetView({ kind, notify, onChanged, refreshKey, onNavig
                       value={text(form[f.key])}
                       onChange={e => setForm(p => ({ ...p, [f.key]: e.target.value }))}
                       placeholder={f.placeholder} />
+                  )}
+                  {f.type === 'urange' && (
+                    <URangePreview form={form}
+                      units={Number(asset?.options.racks.find(o => o.id === text(form.rack_id))?.units ?? 0) || undefined}
+                      rows={text(form.rack_id) ? items : []}
+                      excludeId={editor?.row?.id} rackId={text(form.rack_id)} />
                   )}
                   {f.help && <div className="help">{f.help}</div>}
                   {f.key === 'role' && can('device_roles') && (

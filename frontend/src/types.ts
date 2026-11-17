@@ -768,7 +768,8 @@ export interface AssetRow {
   device_count?: number
   rack_count?: number
   layout_order?: number
-  occupants?: { id: string; name: string; rack_u: number | null; status: string }[]
+  occupants?: { id: string; name: string; rack_u: number | null;
+    u_height?: number; status: string }[]
   // 设备
   vendor?: string
   model?: string
@@ -776,7 +777,9 @@ export interface AssetRow {
   mgmt_ip?: string | null
   rack_id?: string | null
   rack_name?: string
+  /** 起始 U 位；与 u_height 组成闭区间 [rack_u, rack_u + u_height - 1] */
   rack_u?: number | null
+  u_height?: number
   vrf?: string
   owner?: string
   prefix_cidr?: string | null
@@ -923,10 +926,13 @@ export interface RackDetailData {
   devices: AssetRow[]
   stats: {
     units: number
+    /** 实际占用的 U 数（多 U 设备按高度累加） */
     used: number
     free: number
     util: number
     online: number
+    /** 在架设备台数（与 used 分离） */
+    device_count: number
   }
   options: AssetData['options']
   /** 可见范围内已使用的角色（含自定义值），供组合框候选复用 */
@@ -939,9 +945,12 @@ export interface RackDetailData {
 export interface RackMoveResult {
   id: string
   rack_u: number
+  u_height?: number
   action: 'move' | 'swap' | 'unchanged'
   from_u: number | null
   swapped_with: string | null
+  /** 自动交换时被重新安置的设备编号（可能不止一台） */
+  moved?: string[]
 }
 
 /** 位置二级页面（机柜横向平面图）数据。 */
