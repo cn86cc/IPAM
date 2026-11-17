@@ -35,11 +35,13 @@
 | --- | --- |
 | 工作台 | 地址利用率看板、容量阈值告警、全局模糊搜索 |
 | 地址管理 | 地址空间树（可编辑）、RFC1918 三段私有根、VRF 地址平面真隔离、子网等分划分、IP 自动分配 / 手动指定 / 回收、子网 IP 使用位图 |
-| 设备管理 | 位置 → 机柜 → 设备 → 链路 → 设备角色，含机柜 U 位视图 |
+| 设备管理 | 位置 → 机柜 → 设备 → 链路 → 设备角色 → 网络拓扑，含机柜 U 位视图与可拖拽的自定义拓扑图 |
 | 工单管理 | 分配申请、审批工单 |
 | 治理与对账 | 发现记录、对账差异、审计日志、维护快照 |
 | 分析与集成 | 报表、自定义页面、集成来源与 Webhook |
 | 访问控制 | 本地账号 / LDAP / SSO(OIDC)、角色与模块授权、CIDR 可见范围（RBAC） |
+
+> **网络拓扑**：每张拓扑图绑定一个 VRF 地址平面。勾选设备后，系统按 `asset_links` 的链路关系自动做 BFS 分层并生成树形拓扑，默认以连接度最高的设备为根，也可手动指定根设备；环路按生成树处理、孤立设备单独排一层。节点可自由拖动，松手即保存坐标，未拖动的节点会随链路变化自动重排，「重新布局」可全部复位。连线始终实时读取链路清单，不复制数据；支持导出 SVG。「全部 VRF」汇总视图下只读。
 
 ### 技术架构
 
@@ -97,7 +99,7 @@ bootstrap.sh（引导）
   └─ 3. 调用 install.sh --deploy
           ├─ 3.1 scripts/system-deps.sh    装 python3-venv / pip / nginx 等系统依赖
           ├─ 3.2 应用安装                  建 .venv → 装 16 个 Python 包 → 复用前端 dist
-          │                              → 初始化 SQLite → 纯净库硬验收 → 19 项回归测试
+          │                              → 初始化 SQLite → 纯净库硬验收 → 57 项回归测试
           └─ 3.3 scripts/system-config.sh 写 systemd unit + nginx 站点
                                         → 处理默认站点冲突 → 开机自启 → HTTP 验收
 ```
@@ -148,7 +150,7 @@ cd /opt/ipam && ./install.sh --deploy
 ==> [5/6] 初始化 / 迁移数据库并验收
     users=1  prefixes=3  ip_addresses=0  业务表合计=0  integrity=ok
     [OK] 纯净库验收通过（三段根 / 仅 admin / 业务表全空）
-Ran 19 tests in 4.360s / OK
+Ran 57 tests in 25.7s / OK
 
 ==> [部署 3/3] 配置 systemd + nginx 并启动
     [OK] ipam active=active enabled=enabled
@@ -352,7 +354,7 @@ sudo ./scripts/system-deps.sh --apply
 IPAM_DEMO_SEED=0 ./install.sh --test
 ```
 
-预期看到 `users=1 prefixes=3 ip_addresses=0 业务表合计=0 integrity=ok` 和 `Ran 19 tests ... OK`。
+预期看到 `users=1 prefixes=3 ip_addresses=0 业务表合计=0 integrity=ok` 和 `Ran 57 tests ... OK`。
 
 ### 第 5 步：配置系统服务并启动
 
@@ -588,7 +590,7 @@ cd /opt/ipam && git pull --ff-only && sudo systemctl restart ipam
 - `curl https://pypi.org/simple/` 超时：那是全量索引根页（几十 MB），探测请改用具体包 `https://pypi.org/simple/fastapi/`。
 - 首次 SSH 出现 `Warning: Permanently added ... to the list of known hosts`：首次信任主机密钥，正常。
 
-还有问题先跑 `./install.sh --check`、`./scripts/system-deps.sh --check`、`./scripts/system-config.sh --check`，再跑 `./install.sh --test` 看 19 项回归是否通过。
+还有问题先跑 `./install.sh --check`、`./scripts/system-deps.sh --check`、`./scripts/system-config.sh --check`，再跑 `./install.sh --test` 看回归测试是否全部通过。
 
 ---
 

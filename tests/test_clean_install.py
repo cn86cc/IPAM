@@ -30,6 +30,7 @@ BUSINESS_TABLES = (
     "ip_addresses", "asset_devices", "asset_links", "asset_locations", "asset_racks",
     "audit_logs", "discovery_records", "reconciliation_diffs", "sessions", "sso_states",
     "tickets", "utilization_snapshots", "webhook_events",
+    "topologies", "topology_nodes",
 )
 CONFIG_TABLES = (
     "vrfs", "settings", "auth_sources", "integration_sources", "asset_device_roles",

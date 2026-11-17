@@ -249,6 +249,7 @@ const QUICK_NAV: { key: View; label: string; icon: string; stat?: 'devices' | 'r
   { key: 'devices', label: '设备', icon: 'cpu', stat: 'devices' },
   { key: 'links', label: '链路', icon: 'swap', stat: 'links' },
   { key: 'device_roles', label: '角色', icon: 'tag' },
+  { key: 'topology', label: '拓扑', icon: 'network' },
 ]
 
 export function initialForm(kind: AssetKind, row?: AssetRow): AssetPayload {
@@ -515,7 +516,8 @@ export default function AssetView({ kind, notify, onChanged, refreshKey, onNavig
 
       <div className="asset-quicknav" id="asset-quicknav">
         <span className="asset-quicknav-title"><Icon name="cpu" size={14} />设备管理</span>
-        {QUICK_NAV.filter(n => n.key !== 'device_roles' || can('device_roles')).map(n => (
+        {QUICK_NAV.filter(n => (n.key !== 'device_roles' || can('device_roles'))
+          && (n.key !== 'topology' || can('topology'))).map(n => (
           <button key={n.key} className={`asset-quicknav-item${kind === n.key ? ' active' : ''}`}
             onClick={() => onNavigate(n.key)}>
             <Icon name={n.icon} size={13} />{n.label}

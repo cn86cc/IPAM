@@ -302,6 +302,29 @@ CREATE TABLE IF NOT EXISTS asset_device_roles (
   updated_at TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_asset_device_role ON asset_devices(role);
+-- 第七版：自定义拓扑图。每张图绑定单一 VRF 地址平面，只存「包含哪些设备 +
+-- 手工坐标」；连线永远从 asset_links 实时推导，避免链路数据双写。
+CREATE TABLE IF NOT EXISTS topologies (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  description TEXT NOT NULL DEFAULT '',
+  vrf TEXT NOT NULL DEFAULT 'default',
+  -- root_mode=auto 时取连接度最高的设备为根；manual 时以 root_device_id 为准
+  root_mode TEXT NOT NULL DEFAULT 'auto',
+  root_device_id TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT
+);
+CREATE TABLE IF NOT EXISTS topology_nodes (
+  topology_id TEXT NOT NULL,
+  device_id TEXT NOT NULL,
+  x REAL NOT NULL DEFAULT 0,
+  y REAL NOT NULL DEFAULT 0,
+  -- pinned=1 表示该坐标是用户拖出来的，链路变化时不自动覆盖
+  pinned INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (topology_id, device_id)
+);
+CREATE INDEX IF NOT EXISTS idx_topology_vrf ON topologies(vrf);
 """
 
 # (分组 CIDR, 名称, [(子网 CIDR, 名称, VLAN, 已登记使用数)])

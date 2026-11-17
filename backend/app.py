@@ -17,7 +17,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Resp
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict
 
-from . import assets, auth, db, device_roles, domain, extended, ip_admin, prefix_admin
+from . import assets, auth, db, device_roles, domain, extended, ip_admin, prefix_admin, topology
 
 
 @asynccontextmanager
@@ -910,6 +910,57 @@ def asset_update(kind: str, item_id: str, body: dict, request: Request):
 @app.delete("/api/assets/{kind}/{item_id}")
 def asset_delete(kind: str, item_id: str, request: Request):
     return _run(assets.delete_asset, kind, item_id, _actor(request)["username"])
+
+
+# ---------------------------------------------------------------- 自定义拓扑图
+# /catalog 是固定路径，必须声明在 /{topo_id} 之前，否则会被当成拓扑编号。
+# 写操作的平面归属由 topology._assert_write_plane() 在领域层校验：新建时请求体
+# 已显式给出唯一平面，允许在「全部 VRF」汇总视图下发生；编辑 / 保存 / 删除则
+# 一律要求顶栏切到该拓扑所属平面。
+@app.get("/api/topologies")
+def topology_list():
+    return _run(topology.list_topologies)
+
+
+@app.get("/api/topologies/catalog")
+def topology_catalog(vrf: str | None = None):
+    return _run(topology.catalog, vrf)
+
+
+@app.post("/api/topologies")
+def topology_create(body: dict, request: Request):
+    return _run(topology.create_topology, body, _actor(request)["username"])
+
+
+@app.get("/api/topologies/{topo_id}")
+def topology_get(topo_id: str):
+    return _run(topology.get_topology, topo_id)
+
+
+@app.put("/api/topologies/{topo_id}")
+def topology_update(topo_id: str, body: dict, request: Request):
+    return _run(topology.update_topology, topo_id, body, _actor(request)["username"])
+
+
+@app.post("/api/topologies/{topo_id}/layout")
+def topology_save_layout(topo_id: str, body: dict, request: Request):
+    return _run(topology.save_layout, topo_id, body.get("nodes"),
+                _actor(request)["username"])
+
+
+@app.post("/api/topologies/{topo_id}/relayout")
+def topology_relayout(topo_id: str, request: Request):
+    return _run(topology.relayout_topology, topo_id, _actor(request)["username"])
+
+
+@app.post("/api/topologies/{topo_id}/duplicate")
+def topology_duplicate(topo_id: str, request: Request):
+    return _run(topology.duplicate_topology, topo_id, _actor(request)["username"])
+
+
+@app.delete("/api/topologies/{topo_id}")
+def topology_delete(topo_id: str, request: Request):
+    return _run(topology.delete_topology, topo_id, _actor(request)["username"])
 
 
 # 构建后的前端由同一个服务托管，便于单端口部署；开发态走 Vite dev server。

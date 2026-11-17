@@ -1,7 +1,7 @@
 export type Status = 'assigned' | 'reserved' | 'deprecated' | 'conflict' | 'available'
 export type View =
   | 'dashboard' | 'spaces' | 'allocation' | 'subnets' | 'tickets' | 'vrf'
-  | 'devices' | 'device_roles' | 'racks' | 'links' | 'locations'
+  | 'devices' | 'device_roles' | 'racks' | 'links' | 'locations' | 'topology'
   | 'reconciliation' | 'approvals' | 'audit' | 'users'
   | 'reports' | 'integrations' | 'settings'
 
@@ -969,4 +969,130 @@ export interface RackReorderResult {
   order: string[]
   action: 'reorder' | 'unchanged'
   from: string[]
+}
+
+/* ------------------------------ 自定义网络拓扑 ------------------------------ */
+
+export interface TopologyPlane {
+  id: string
+  name: string
+}
+
+export interface TopologySummary {
+  id: string
+  name: string
+  description: string
+  vrf: string
+  root_mode: 'auto' | 'manual'
+  root_device_id: string | null
+  device_count: number
+  link_count: number
+  created_at: string
+  updated_at: string | null
+}
+
+export interface TopologyListData {
+  items: TopologySummary[]
+  plane: string
+  vrfs: TopologyPlane[]
+}
+
+/** 设备池条目 / 画布节点共用的字段；画布节点额外带坐标与树形层级。 */
+export interface TopologyCatalogDevice {
+  id: string
+  name: string
+  role: string
+  vendor: string
+  model: string
+  mgmt_ip: string | null
+  status: string
+  vrf: string
+  location_id: string | null
+  location_name: string | null
+  rack_id: string | null
+  rack_name: string | null
+}
+
+export interface TopologyCatalog {
+  vrf: string
+  items: TopologyCatalogDevice[]
+  vrfs: TopologyPlane[]
+}
+
+export interface TopologyNode extends TopologyCatalogDevice {
+  x: number
+  y: number
+  auto_x: number
+  auto_y: number
+  pinned: number
+  parent: string | null
+  depth: number
+  is_root: boolean
+}
+
+export interface TopologyEdge {
+  id: string
+  name: string
+  /** 链路类型：trunk / access 等，来自 asset_links.kind */
+  kind: string
+  /** 生成树标记：tree 为树边，extra 为环路等附加链路 */
+  edge_role: 'tree' | 'extra'
+  local_device_id: string
+  local_port: string
+  remote_device_id: string
+  remote_port: string
+  bandwidth_gbps: number
+  vlan: string
+  status: string
+}
+
+export interface TopologyDetail {
+  id: string
+  name: string
+  description: string
+  vrf: string
+  root_mode: 'auto' | 'manual'
+  root_device_id: string | null
+  resolved_root: string | null
+  created_at: string
+  updated_at: string | null
+  plane: string
+  writable: boolean
+  vrfs: TopologyPlane[]
+  catalog: { vrf: string; items: TopologyCatalogDevice[] }
+  nodes: TopologyNode[]
+  edges: TopologyEdge[]
+  missing_devices: string[]
+  stats: {
+    devices: number
+    links: number
+    tree_links: number
+    isolated: number
+    pinned: number
+  }
+  canvas: { width: number; height: number }
+}
+
+export interface TopologyWriteResult {
+  id: string
+  name?: string
+  vrf?: string
+  device_count?: number
+  devices?: number
+  saved?: number
+}
+
+export interface TopologyPayload {
+  name?: string
+  description?: string
+  vrf?: string
+  device_ids?: string[]
+  root_mode?: 'auto' | 'manual'
+  root_device_id?: string | null
+}
+
+export interface TopologyNodePosition {
+  device_id: string
+  x: number
+  y: number
 }

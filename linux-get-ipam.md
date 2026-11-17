@@ -80,3 +80,6 @@ IPAM_DEMO_SEED=0 ./install.sh --start
 - 三个脚本都是幂等的，重复执行不会重复安装、不会覆盖已有数据。
 - 允许外部访问时需放行防火墙 / 安全组的 80 与 8000 端口。
 - 默认口令 `admin / Admin@123` 写在公开仓库里，首次登录后请立即修改。
+
+版本更新：
+cd /opt/ipam && git pull --ff-only && sudo systemctl restart ipam

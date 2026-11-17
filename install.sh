@@ -293,6 +293,7 @@ business = (
     "ip_addresses", "asset_devices", "asset_links", "asset_locations", "asset_racks",
     "audit_logs", "discovery_records", "reconciliation_diffs", "sessions", "sso_states",
     "tickets", "utilization_snapshots", "webhook_events",
+    "topologies", "topology_nodes",
 )
 tables = [r[0] for r in c.execute("SELECT name FROM sqlite_master WHERE type='table'")]
 counts = {t: c.execute('SELECT COUNT(*) FROM "%s"' % t).fetchone()[0] for t in tables}

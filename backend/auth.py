@@ -51,6 +51,7 @@ MODULES: list[dict[str, str]] = [
     {"key": "links", "label": "链路", "group": "设备管理"},
     {"key": "locations", "label": "位置", "group": "设备管理"},
     {"key": "device_roles", "label": "角色", "group": "设备管理"},
+    {"key": "topology", "label": "拓扑", "group": "设备管理"},
     {"key": "tickets", "label": "分配申请", "group": "工单管理"},
     {"key": "approvals", "label": "审批工单", "group": "工单管理"},
     {"key": "reconciliation", "label": "发现与对账", "group": "治理与对账"},
@@ -130,6 +131,7 @@ PATH_MODULE_RULES: list[tuple[tuple[str, ...], str]] = [
     (("/api/assets/racks",), "racks"),
     (("/api/assets/links",), "links"),
     (("/api/assets/locations",), "locations"),
+    (("/api/topologies",), "topology"),
 ]
 
 _current = contextvars.ContextVar("ipam_auth_context", default=None)

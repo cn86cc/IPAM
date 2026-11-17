@@ -25,6 +25,7 @@ import AssetView from './views/AssetView'
 import DeviceRolesView from './views/DeviceRolesView'
 import RackDetailView from './views/RackDetailView'
 import LocationDetailView from './views/LocationDetailView'
+import TopologyView from './views/TopologyView'
 import { sortPrefixes as sorted } from './views/shared'
 
 interface Toast { id: number; msg: string; kind: 'ok' | 'error' }
@@ -41,6 +42,7 @@ const NAV: { key: View; label: string; icon: string; group: string;
   { key: 'devices', label: '设备', icon: 'cpu', group: '设备管理' },
   { key: 'links', label: '链路', icon: 'swap', group: '设备管理' },
   { key: 'device_roles', label: '角色', icon: 'tag', group: '设备管理' },
+  { key: 'topology', label: '拓扑', icon: 'network', group: '设备管理' },
   { key: 'tickets', label: '分配申请', icon: 'ticket', group: '工单管理' },
   { key: 'approvals', label: '审批工单', icon: 'shield', group: '工单管理', badge: 'tickets' },
   { key: 'reconciliation', label: '发现与对账', icon: 'scan', group: '治理与对账', badge: 'diffs' },
@@ -67,6 +69,7 @@ const VIEW_META: Record<View, { title: string; desc: string }> = {
   racks: { title: '机柜', desc: '机柜容量与 U 位占用：点击清单进入机柜正视图二级页面，默认完整机柜模式，支持拖拽调整设备 U 位与选中设备直接编辑，机柜编号可再次编辑' },
   links: { title: '链路', desc: '设备端口互联关系：本端 / 对端设备与端口、链路类型、带宽、VLAN 与连通状态，链路编号可再次编辑' },
   locations: { title: '位置', desc: '园区 → 楼宇 → 楼层 → 机房四级位置层级；点击具体位置进入机柜横向平面图，可等宽查看并拖动调整机柜排列，位置编号可再次编辑' },
+  topology: { title: '网络拓扑', desc: '新建自定义拓扑图：按所选设备与链路自动生成树形网络拓扑，默认以连接度最高的设备为根，也可手动指定；设备节点可自由拖动并保存坐标，连线随资产变更自动同步' },
   reconciliation: { title: '发现与对账', desc: '外部观测回灌生成差异，人工处理后调用状态机完成闭环' },
   approvals: { title: '审批工单', desc: '对待审批工单决策；通过后由领域核心层真实执行分配、回收或扩容' },
   audit: { title: '审计日志', desc: '所有入口写操作的只追加留痕，按动作与关键词检索并导出' },
@@ -78,7 +81,7 @@ const VIEW_META: Record<View, { title: string; desc: string }> = {
 
 const VIEWS: View[] = [
   'dashboard', 'spaces', 'allocation', 'subnets', 'vrf',
-  'devices', 'racks', 'links', 'locations', 'device_roles',
+  'devices', 'racks', 'links', 'locations', 'device_roles', 'topology',
   'tickets', 'approvals',
   'reconciliation', 'audit', 'users', 'reports', 'integrations', 'settings',
 ]
@@ -560,6 +563,10 @@ function MainConsole() {
               )}
               {view === 'device_roles' && (
                 <DeviceRolesView refreshKey={refreshKey} onChanged={refresh} notify={notify}
+                  onNavigate={setView} />
+              )}
+              {view === 'topology' && (
+                <TopologyView refreshKey={refreshKey} onChanged={refresh} notify={notify}
                   onNavigate={setView} />
               )}
               {view === 'subnets' && (

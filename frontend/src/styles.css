@@ -686,6 +686,9 @@ tbody tr:last-child td{border-bottom:none}
 .asset-quicknav-item .n{font-size:10px;color:var(--text-3);background:var(--bg);border-radius:8px;padding:0 6px}
 .asset-quicknav-item.active .n{background:var(--surface);color:var(--blue-800)}
 .asset-scope-note{margin-left:auto;font-size:11px;color:var(--text-3)}
+/* 位置 / 机柜 / 设备 / 链路 四个清单页取消显示横向快捷标签栏（左侧菜单已有等价导航入口）。
+   仅隐藏显示，不改动 QUICK_NAV、统计、权限过滤与任何业务逻辑；删除本行即可恢复。 */
+.asset-quicknav{display:none}
 .asset-toolbar{padding:12px 18px;border-bottom:1px solid var(--border);margin-bottom:0}
 .asset-filter{height:32px;padding:0 10px;border:1px solid var(--border);border-radius:8px;
   background:var(--surface);font-size:12px;outline:none}
@@ -923,3 +926,80 @@ tbody tr:last-child td{border-bottom:none}
 .role-manage-link{display:inline-flex;align-items:center;gap:4px;margin-top:6px;padding:0;
   background:none;border:0;color:var(--blue);font-size:11px;cursor:pointer}
 .role-manage-link:hover{text-decoration:underline}
+
+/* ---------------- 自定义拓扑 ---------------- */
+.topo-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(360px,1fr));gap:12px}
+.topo-card{display:flex;gap:12px;align-items:flex-start;background:var(--surface);
+  border:1px solid var(--border);border-radius:var(--r);padding:16px}
+.topo-card-icon{width:36px;height:36px;flex:none;border-radius:9px;background:var(--blue-50);
+  color:var(--blue);display:flex;align-items:center;justify-content:center}
+.topo-card-main{flex:1;min-width:0}
+.topo-card-title{display:flex;align-items:center;gap:8px;font-size:14px;font-weight:600;color:var(--text)}
+.topo-card-desc{font-size:12px;color:var(--text-2);margin:6px 0;overflow:hidden;
+  text-overflow:ellipsis;white-space:nowrap}
+.topo-card-meta{font-size:11px;color:var(--text-3)}
+.topo-card-actions{display:flex;flex-direction:column;gap:6px;flex:none}
+.topo-toolbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px}
+.topo-toolbar b{font-size:15px;font-weight:600}
+.topo-toolbar .spacer{flex:1}
+.topo-toolbar-meta{font-size:11px;color:var(--text-3)}
+.topo-grid{display:grid;grid-template-columns:212px minmax(0,1fr) 232px;gap:12px;align-items:stretch}
+.topo-side{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);
+  display:flex;flex-direction:column;min-height:560px;max-height:640px;overflow:hidden}
+.topo-side-head{display:flex;align-items:center;justify-content:space-between;
+  padding:12px 14px;border-bottom:1px solid var(--border)}
+.topo-side-head b{font-size:13px;font-weight:600}
+.topo-side-head span{font-size:11px;color:var(--text-3)}
+.topo-filter{margin:10px 12px;height:30px;padding:0 10px;border:1px solid var(--border);
+  border-radius:8px;font-size:12px;outline:none}
+.topo-filter:focus{border-color:var(--blue)}
+.topo-device-list{flex:1;overflow-y:auto;padding:0 8px 8px}
+.topo-device-row{display:flex;align-items:center;gap:8px;width:100%;padding:7px 8px;
+  border-radius:7px;text-align:left}
+.topo-device-row:hover:not(:disabled){background:var(--bg)}
+.topo-device-row:disabled{opacity:.72;cursor:default}
+.topo-device-row>span:last-child{min-width:0;display:flex;flex-direction:column}
+.topo-device-row b{font-size:12px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.topo-device-row small{font-size:10px;color:var(--text-3);overflow:hidden;
+  text-overflow:ellipsis;white-space:nowrap}
+.topo-check{width:15px;height:15px;flex:none;border:1px solid var(--border-2);border-radius:4px;
+  background:var(--surface);display:flex;align-items:center;justify-content:center;color:#fff}
+.topo-check.on{background:var(--blue);border-color:var(--blue)}
+.topo-side-foot{padding:10px 14px;border-top:1px solid var(--border);font-size:10px;color:var(--text-3)}
+.topo-canvas{position:relative;background:var(--surface);border:1px solid var(--border);
+  border-radius:var(--r);min-height:560px;max-height:640px;overflow:hidden;display:flex;flex-direction:column}
+.topo-svg{flex:1;min-height:0;touch-action:none;user-select:none}
+.topo-node text{pointer-events:none}
+.topo-edge{cursor:pointer}
+.topo-canvas-foot{padding:8px 14px;border-top:1px solid var(--border);font-size:11px;color:var(--text-3)}
+.topo-props{padding:0 14px 14px;overflow-y:auto}
+.topo-props .field{margin-top:12px;margin-bottom:8px}
+.topo-prop-block{margin-top:10px;padding-top:12px;border-top:1px solid var(--border)}
+.topo-prop-block h3{font-size:12px;font-weight:600;margin-bottom:10px;color:var(--text)}
+.topo-prop-row{display:flex;justify-content:space-between;gap:10px;font-size:11px;
+  line-height:2;color:var(--text-2)}
+.topo-prop-row b{font-weight:500;color:var(--text);max-width:130px;overflow:hidden;
+  text-overflow:ellipsis;white-space:nowrap}
+.topo-picker{max-height:320px;overflow-y:auto;border:1px solid var(--border);
+  border-radius:8px;padding:6px 8px;background:var(--surface)}
+.topo-picker-group+.topo-picker-group{margin-top:6px;padding-top:6px;border-top:1px solid var(--border)}
+.topo-picker-title{font-size:11px;color:var(--text-3);margin:2px 0 4px;padding-left:2px}
+/* 优先级必须高于 .field label{display:block}，否则整行退化成块级，
+   复选框 / 设备名 / 角色会挤在左侧、右侧空出一大片。 */
+.field .topo-picker-row{display:flex;align-items:center;gap:10px;min-height:30px;
+  margin-bottom:0;padding:3px 8px;border-radius:6px;
+  font-size:12px;color:var(--text);line-height:1.3;cursor:pointer}
+.field .topo-picker-row:hover{background:var(--bg)}
+/* 彻底剥离 .field input 给文本框的 100% 宽 / 36px 高 / 内边距 / 边框 / 圆角 */
+.field .topo-picker-row input[type="checkbox"]{appearance:auto;-webkit-appearance:checkbox;
+  width:16px;height:16px;flex:0 0 16px;box-sizing:border-box;
+  padding:0;margin:0;border:0;border-radius:0;background:none;box-shadow:none;
+  font-size:inherit;accent-color:var(--blue);cursor:pointer}
+.topo-picker-row span{flex:1 1 auto;min-width:0;overflow:hidden;
+  text-overflow:ellipsis;white-space:nowrap}
+.topo-picker-row small{flex:0 0 auto;font-size:10px;color:var(--text-3);
+  padding:2px 6px;border-radius:4px;background:var(--bg)}
+@media(max-width:1280px){
+  .topo-grid{grid-template-columns:180px minmax(0,1fr)}
+  .topo-props{grid-column:1/-1;max-height:none;min-height:0}
+}

@@ -10,6 +10,8 @@ import type {
   AssetKind, AssetData, AssetOverview, AssetPayload, AssetWriteResult,
   RackDetailData, RackMoveResult, LocationDetailData, RackReorderResult,
   DeviceRolesData, DeviceRolePayload, DeviceRoleWriteResult,
+  TopologyListData, TopologyCatalog, TopologyDetail, TopologyWriteResult,
+  TopologyPayload, TopologyNodePosition,
 } from './types'
 
 const BASE = '/api'
@@ -242,4 +244,24 @@ export const api = {
     get<LocationDetailData>(`/assets/locations/${encodeURIComponent(id)}/detail`),
   reorderLocationRacks: (id: string, order: string[]) =>
     post<RackReorderResult>(`/assets/locations/${encodeURIComponent(id)}/reorder`, { order }),
+
+  // 03 自定义拓扑：列表 / 设备池 / 详情 / 编辑 / 坐标保存
+  topologies: () => get<TopologyListData>('/topologies'),
+  topologyCatalog: (vrf: string) =>
+    get<TopologyCatalog>(`/topologies/catalog?vrf=${encodeURIComponent(vrf)}`),
+  topology: (id: string) => get<TopologyDetail>(`/topologies/${encodeURIComponent(id)}`),
+  createTopology: (payload: TopologyPayload) =>
+    post<TopologyWriteResult>('/topologies', payload),
+  updateTopology: (id: string, payload: TopologyPayload) =>
+    request<TopologyWriteResult>(`/topologies/${encodeURIComponent(id)}`, {
+      method: 'PUT', body: JSON.stringify(payload),
+    }),
+  deleteTopology: (id: string) =>
+    request<TopologyWriteResult>(`/topologies/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+  saveTopologyLayout: (id: string, nodes: TopologyNodePosition[]) =>
+    post<TopologyWriteResult>(`/topologies/${encodeURIComponent(id)}/layout`, { nodes }),
+  relayoutTopology: (id: string) =>
+    post<TopologyWriteResult>(`/topologies/${encodeURIComponent(id)}/relayout`),
+  duplicateTopology: (id: string) =>
+    post<TopologyWriteResult>(`/topologies/${encodeURIComponent(id)}/duplicate`),
 }
