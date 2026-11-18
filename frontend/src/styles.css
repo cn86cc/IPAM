@@ -957,6 +957,21 @@ tbody tr:last-child td{border-bottom:none}
 .topo-toolbar b{font-size:15px;font-weight:600}
 .topo-toolbar .spacer{flex:1}
 .topo-toolbar-meta{font-size:11px;color:var(--text-3)}
+.topo-relayout-confirm{margin-bottom:12px;flex-wrap:wrap}
+.topo-relayout-confirm>span{flex:1;min-width:220px}
+/* 独立编辑页的面包屑与只读态控件 */
+.topo-crumbs{display:flex;align-items:center;gap:8px;margin-bottom:10px;font-size:12px;color:var(--text-3)}
+.topo-crumb{padding:0;border:0;background:none;color:var(--blue);font-size:12px;cursor:pointer}
+.topo-crumb:hover{text-decoration:underline}
+.topo-crumbs b{font-weight:600;color:var(--text)}
+.topo-crumbs .spacer{flex:1}
+.topo-crumb-hash{font-size:11px;color:var(--text-3);max-width:240px;overflow:hidden;
+  text-overflow:ellipsis;white-space:nowrap;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+.topo-device-row.static:disabled{opacity:1;cursor:default}
+.topo-device-row.static:hover{background:none}
+.topo-readonly-value{display:flex;align-items:center;min-height:36px;padding:0 10px;
+  border:1px solid var(--border);border-radius:8px;background:var(--bg);
+  font-size:12px;color:var(--text)}
 .topo-grid{display:grid;grid-template-columns:212px minmax(0,1fr) 232px;gap:12px;align-items:stretch}
 .topo-side{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);
   display:flex;flex-direction:column;min-height:560px;max-height:640px;overflow:hidden}
@@ -1016,4 +1031,29 @@ tbody tr:last-child td{border-bottom:none}
 @media(max-width:1280px){
   .topo-grid{grid-template-columns:180px minmax(0,1fr)}
   .topo-props{grid-column:1/-1;max-height:none;min-height:0}
+}
+
+/* ---------------- 拓扑编辑页：新 web 标签 + 全屏大画幅 ----------------
+   由 /#topology/<id>/edit 路由驱动（App 给 .app 加 .topo-fullscreen）。
+   隐藏控制台外壳（侧栏 / 顶栏 / 页头 / 汇总提示 / 页脚统计），
+   让三栏与 SVG 画布占满整个视口高度；只改布局，不动任何交互与数据链路。 */
+.app.topo-fullscreen{height:100vh;min-height:100vh;overflow:hidden}
+.app.topo-fullscreen .sidebar,
+.app.topo-fullscreen .topbar,
+.app.topo-fullscreen .page-head,
+.app.topo-fullscreen .all-vrf-banner,
+.app.topo-fullscreen #readonly-banner,
+.app.topo-fullscreen .content>.footnote{display:none}
+.app.topo-fullscreen .main{margin-left:0;height:100vh;display:flex;flex-direction:column}
+.app.topo-fullscreen .content{flex:1;min-height:0;max-width:none;
+  padding:14px 16px 16px;display:flex;flex-direction:column;overflow:hidden}
+.app.topo-fullscreen .topo-page{flex:1;min-height:0;display:flex;flex-direction:column}
+.app.topo-fullscreen .topo-grid{flex:1;min-height:0;
+  grid-template-columns:240px minmax(0,1fr) 264px}
+.app.topo-fullscreen .topo-side,
+.app.topo-fullscreen .topo-canvas{min-height:0;max-height:none;height:100%}
+.app.topo-fullscreen .toast-wrap{top:12px}
+@media(max-width:1280px){
+  .app.topo-fullscreen .topo-grid{grid-template-columns:200px minmax(0,1fr) 224px}
+  .app.topo-fullscreen .topo-props{grid-column:auto;max-height:none;min-height:0;height:100%}
 }

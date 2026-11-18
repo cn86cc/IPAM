@@ -69,7 +69,7 @@ const VIEW_META: Record<View, { title: string; desc: string }> = {
   racks: { title: '机柜', desc: '机柜容量与 U 位占用：点击清单进入机柜正视图二级页面，默认完整机柜模式，支持拖拽调整设备 U 位与选中设备直接编辑，机柜编号可再次编辑' },
   links: { title: '链路', desc: '设备端口互联关系：本端 / 对端设备与端口、链路类型、带宽、VLAN 与连通状态，链路编号可再次编辑' },
   locations: { title: '位置', desc: '园区 → 楼宇 → 楼层 → 机房四级位置层级；点击具体位置进入机柜横向平面图，可等宽查看并拖动调整机柜排列，位置编号可再次编辑' },
-  topology: { title: '网络拓扑', desc: '新建自定义拓扑图：按所选设备与链路自动生成树形网络拓扑，默认以连接度最高的设备为根，也可手动指定；设备节点可自由拖动并保存坐标，连线随资产变更自动同步' },
+  topology: { title: '网络拓扑', desc: '新建自定义拓扑图：按所选设备与链路自动生成树形网络拓扑；详情页按内容自动缩放完整展示，仅用于查看；点「编辑」会在新标签页打开全屏大画幅的独立编辑画布，调整设备范围、根节点与节点坐标' },
   reconciliation: { title: '发现与对账', desc: '外部观测回灌生成差异，人工处理后调用状态机完成闭环' },
   approvals: { title: '审批工单', desc: '对待审批工单决策；通过后由领域核心层真实执行分配、回收或扩容' },
   audit: { title: '审计日志', desc: '所有入口写操作的只追加留痕，按动作与关键词检索并导出' },
@@ -89,31 +89,51 @@ const VIEWS: View[] = [
 /**
  * #allocation / #reclaim 都落到同一个「IP 分配/回收」页面，只是初始标签不同。
  * #reclaim 保留为历史链接与可分享的「直接打开回收标签」入口。
+ *
+ * 拓扑同样有二级页面：#topology/<拓扑编号> 是只读展示页，
+ * #topology/<拓扑编号>/edit 是独立编辑页，两者各自可直接刷新 / 分享。
+ * 编辑页由「编辑」按钮在新 web 标签打开，并进入全屏大画幅（隐藏侧栏 / 顶栏 / 页头）。
  */
-function viewFromHash(): { view: View; tab: AllocTab; rackId: string | null;
-  locationId: string | null } {
+interface HashState {
+  view: View
+  tab: AllocTab
+  rackId: string | null
+  locationId: string | null
+  topologyId: string | null
+  topologyEdit: boolean
+}
+
+function viewFromHash(): HashState {
   const raw = window.location.hash.slice(1)
+  const base = { tab: 'allocation' as AllocTab, rackId: null, locationId: null,
+    topologyId: null as string | null, topologyEdit: false }
   if (raw === 'reclaim') {
-    return { view: 'allocation', tab: 'reclaim', rackId: null, locationId: null }
+    return { ...base, view: 'allocation', tab: 'reclaim' }
   }
   if (raw === 'allocation') {
-    return { view: 'allocation', tab: 'allocation', rackId: null, locationId: null }
+    return { ...base, view: 'allocation' }
   }
   // 机柜正视图是机柜清单的二级页面：#racks/<机柜编号>，可直接分享 / 刷新恢复
   if (raw.startsWith('racks/')) {
     const rackId = decodeURIComponent(raw.slice(6))
-    if (rackId) return { view: 'racks', tab: 'allocation', rackId, locationId: null }
+    if (rackId) return { ...base, view: 'racks', rackId }
   }
   // 位置机柜平面图：#locations/<位置编号>
   if (raw.startsWith('locations/')) {
     const locationId = decodeURIComponent(raw.slice(10))
-    if (locationId) return { view: 'locations', tab: 'allocation', rackId: null, locationId }
+    if (locationId) return { ...base, view: 'locations', locationId }
+  }
+  // 拓扑只读展示页 / 独立编辑页：#topology/<id>[/edit]
+  if (raw.startsWith('topology/')) {
+    const parts = raw.slice(9).split('/')
+    const topologyId = decodeURIComponent(parts[0] || '')
+    if (topologyId) {
+      return { ...base, view: 'topology', topologyId, topologyEdit: parts[1] === 'edit' }
+    }
   }
   return {
+    ...base,
     view: VIEWS.includes(raw as View) ? raw as View : 'dashboard',
-    tab: 'allocation',
-    rackId: null,
-    locationId: null,
   }
 }
 
@@ -150,6 +170,8 @@ function MainConsole() {
   const [allocTab, setAllocTab] = useState<AllocTab>(() => viewFromHash().tab)
   const [rackDetail, setRackDetail] = useState<string | null>(() => viewFromHash().rackId)
   const [locationDetail, setLocationDetail] = useState<string | null>(() => viewFromHash().locationId)
+  const [topologyId, setTopologyId] = useState<string | null>(() => viewFromHash().topologyId)
+  const [topologyEdit, setTopologyEdit] = useState<boolean>(() => viewFromHash().topologyEdit)
   const [scope, setScope] = useState('all')
   const [userMenu, setUserMenu] = useState(false)
   const [pwOpen, setPwOpen] = useState(false)
@@ -176,25 +198,28 @@ function MainConsole() {
     window.setTimeout(() => setToasts(list => list.filter(t => t.id !== id)), 3200)
   }, [])
 
-  // 标签与两类二级页面都写入 hash，刷新 / 分享链接能直接回到对应位置
+  // 标签与三类二级页面都写入 hash，刷新 / 分享链接能直接回到对应位置
   useEffect(() => {
     const target = view === 'racks' && rackDetail
       ? '#racks/' + encodeURIComponent(rackDetail)
       : view === 'locations' && locationDetail
         ? '#locations/' + encodeURIComponent(locationDetail)
-        : view === 'allocation'
-          ? (allocTab === 'reclaim' ? '#reclaim' : '#allocation')
-          : '#' + view
+        : view === 'topology' && topologyId
+          ? '#topology/' + encodeURIComponent(topologyId) + (topologyEdit ? '/edit' : '')
+          : view === 'allocation'
+            ? (allocTab === 'reclaim' ? '#reclaim' : '#allocation')
+            : '#' + view
     if (window.location.hash !== target) {
       window.history.replaceState(null, '', target)
     }
-  }, [view, allocTab, rackDetail, locationDetail])
+  }, [view, allocTab, rackDetail, locationDetail, topologyId, topologyEdit])
 
   // 侧栏切到其它一级页面时，退出对应二级页面
   useEffect(() => {
     if (view !== 'racks' && rackDetail) setRackDetail(null)
     if (view !== 'locations' && locationDetail) setLocationDetail(null)
-  }, [view, rackDetail, locationDetail])
+    if (view !== 'topology' && topologyId) { setTopologyId(null); setTopologyEdit(false) }
+  }, [view, rackDetail, locationDetail, topologyId])
 
   useEffect(() => {
     const onHash = () => {
@@ -203,6 +228,8 @@ function MainConsole() {
       setView(next.view)
       setRackDetail(next.rackId)
       setLocationDetail(next.locationId)
+      setTopologyId(next.topologyId)
+      setTopologyEdit(next.topologyEdit)
     }
     window.addEventListener('hashchange', onHash)
     return () => window.removeEventListener('hashchange', onHash)
@@ -330,9 +357,12 @@ function MainConsole() {
   // ConsoleGate 已保证登录态；这里再收窄一次，避免 JSX 内反复判空
   if (!user) return null
   const meta = VIEW_META[view]
+  // 拓扑编辑页是独立全屏画幅：由「编辑」按钮在新 web 标签打开，也可直接访问 /edit 链接。
+  // 只改外壳渲染（CSS 隐藏侧栏 / 顶栏 / 页头），数据加载与权限校验链路保持不变。
+  const immersive = view === 'topology' && topologyEdit && Boolean(topologyId)
 
   return (
-    <div className={`app console${isAdmin ? '' : ' readonly'}`}>
+    <div className={`app console${isAdmin ? '' : ' readonly'}${immersive ? ' topo-fullscreen' : ''}`}>
       <aside className="sidebar">
         <div className="brand">
           <div className="brand-mark">IP</div>
@@ -357,9 +387,10 @@ function MainConsole() {
                       className={`nav-item${view === n.key ? ' active' : ''}`}
                       onClick={() => {
                         if (n.key === 'allocation') setAllocTab('allocation')
-                        // 再点「机柜」/「位置」侧栏时回到各自清单，而不是停留在二级页面
+                        // 再点「机柜」/「位置」/「拓扑」侧栏时回到各自清单，而不是停留在二级页面
                         if (n.key === 'racks') setRackDetail(null)
                         if (n.key === 'locations') setLocationDetail(null)
+                        if (n.key === 'topology') { setTopologyId(null); setTopologyEdit(false) }
                         setView(n.key)
                       }}>
                       <Icon name={n.icon} />{n.label}
@@ -567,7 +598,10 @@ function MainConsole() {
               )}
               {view === 'topology' && (
                 <TopologyView refreshKey={refreshKey} onChanged={refresh} notify={notify}
-                  onNavigate={setView} />
+                  onNavigate={setView}
+                  topologyId={topologyId} editMode={topologyEdit} fullscreen={immersive}
+                  onOpenTopology={id => { setTopologyId(id); setTopologyEdit(false) }}
+                  onCloseTopology={() => { setTopologyId(null); setTopologyEdit(false) }} />
               )}
               {view === 'subnets' && (
                 <SubnetPlannerView refreshKey={refreshKey} onChanged={refresh} notify={notify} />
